@@ -268,6 +268,9 @@ export function App() {
         <span className="sb-logo" aria-hidden="true">F</span>
         <span className="sb-name">FaangJobs</span>
         <span className="grow" />
+        <a className="sb-crmlink" href="/crm" title="CRM boshqaruv paneliga o'tish">
+          CRM
+        </a>
         <button
           className="sb-iconbtn"
           aria-label="Toggle theme"

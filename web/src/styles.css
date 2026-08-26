@@ -130,6 +130,12 @@ input { font: inherit; color: inherit; }
   display: grid; place-items: center; color: var(--text-3);
 }
 .sb-iconbtn:hover { background: var(--hover-strong); color: var(--text-2); }
+.sb-crmlink {
+  display: flex; align-items: center; height: 26px; padding: 0 8px;
+  border-radius: 4px; flex: none; border: 1px solid var(--divider-strong);
+  color: var(--text-3); font-size: 12px; font-weight: 600;
+}
+.sb-crmlink:hover { background: var(--hover-strong); color: var(--text-2); }
 .sb-close { display: none; }
 
 /* Search — fixed geometry so focusing never shifts the layout. */
