@@ -251,6 +251,146 @@ this script, not a flag to flip lightly.
 
 ---
 
+## Deployment (Ubuntu VPS)
+
+Everything the repo needs at runtime is either Go stdlib or already committed
+to git (`internal/webui/dist`, the prebuilt frontend) — no Node/npm, no
+database, no package manager beyond `apt` for Go itself. These are the steps
+for a fresh Ubuntu server once one exists.
+
+### 1. Prerequisites
+
+```bash
+sudo apt update && sudo apt install -y golang-go git
+go version   # confirm it matches (or exceeds) the version in go.mod
+```
+
+A **domain name pointed at the VPS's IP** is required, not optional — Google
+OAuth only allows `https://` redirect URIs in production (only `localhost` is
+exempt), so Gmail integration cannot work over a bare IP or plain `http://`.
+Point an A record (e.g. `crm.yourdomain.com`) at the VPS before continuing.
+
+### 2. Clone and build
+
+```bash
+sudo mkdir -p /opt/faangjobs && sudo chown $USER /opt/faangjobs
+git clone https://github.com/sanakulovme/jobs.git /opt/faangjobs
+cd /opt/faangjobs
+make binaries   # -> bin/crawler, bin/server, bin/autoapply
+```
+
+### 3. Configure secrets
+
+```bash
+cp .env.example .env
+```
+
+Fill in `.env` with the Google Cloud OAuth Client ID/Secret and set
+`FAANGJOBS_GOOGLE_REDIRECT_URL=https://crm.yourdomain.com/api/crm/gmail/callback`
+(must match **exactly** what's registered in Google Cloud Console → APIs &
+Services → Credentials, including scheme and path). Update the redirect URI
+there before testing any Gmail connection — the existing entry from local dev
+points at `localhost:8080` and won't work here.
+
+42.uz auth (`FAANGJOBS_JWT_SECRET` and friends) is optional; since this board
+is now the firm's private CRM rather than a public course board, leaving it
+unset (open board, gated instead by the reverse proxy / firewall below) is
+usually the right call — set it only if 42.uz login-gating is still wanted.
+
+### 4. First data population
+
+```bash
+./bin/crawler -data ./data -jobs all   # -jobs all is mandatory, see Scheduling above
+```
+
+### 5. Run the server as a systemd service
+
+`/etc/systemd/system/faangjobs.service`:
+
+```ini
+[Unit]
+Description=FaangJobs server
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/faangjobs
+ExecStart=/opt/faangjobs/bin/server -data /opt/faangjobs/data -addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+(Replace `User=%i` with the actual deploy user, e.g. `User=deploy`.) Then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now faangjobs
+sudo systemctl status faangjobs
+```
+
+The server binds to `127.0.0.1:8080` (not exposed directly) and loads `.env`
+from its working directory automatically — no secrets in the unit file.
+
+### 6. Reverse proxy + TLS
+
+The simplest option is [Caddy](https://caddyserver.com), which gets a
+Let's Encrypt certificate automatically from just a domain name:
+
+```bash
+sudo apt install -y caddy
+```
+
+`/etc/caddy/Caddyfile`:
+
+```
+crm.yourdomain.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+```bash
+sudo systemctl reload caddy
+```
+
+(nginx + certbot works too if Caddy isn't available — same idea: TLS
+terminates at the proxy, proxies plain HTTP to `127.0.0.1:8080`.)
+
+### 7. Schedule the daily crawl + auto-apply
+
+Already built and ready — see [Scheduling](#scheduling) above:
+
+```bash
+crontab -e
+```
+
+```cron
+CRON_TZ=Europe/Berlin
+0 9 * * * /opt/faangjobs/scripts/daily-crawl.sh
+```
+
+This runs `-jobs all` (mandatory) and chains `./bin/autoapply` **in test mode
+only** — verify this is still the case in `scripts/daily-crawl.sh` before
+relying on the schedule; switching to real sends is a separate, deliberate
+decision (see the `autoapply` section above), never something to do as part
+of routine deployment.
+
+### 8. Verify
+
+```bash
+curl -s https://crm.yourdomain.com/healthz
+```
+
+Then in a browser: the job board at `https://crm.yourdomain.com/`, the CRM at
+`/crm`, and — only once ready to test it live — a Gmail connect link from a
+candidate's profile, confirming the OAuth round trip lands back on the new
+domain correctly.
+
+---
+
 ## API
 
 | Method & path            | Description |
