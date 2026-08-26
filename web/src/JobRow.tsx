@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { Job } from './api'
 import { api } from './api'
 import { cleanLocation, cleanTitle, relativeDate, sanitizeHTML } from './format'
@@ -68,6 +69,54 @@ export function JobRow({ job, status, expanded, onToggle }: Props) {
   )
 }
 
+// Facts renders the best-effort structured fields (medical specialty, contact
+// info, requirements, ...) extracted from a posting's free text. Only present
+// fields are shown — most sources don't populate any of these, and a source
+// posting rarely mentions all of them.
+function Facts({ job }: { job: Job }) {
+  const rows: [string, ReactNode][] = []
+  if (job.referenceNumber) rows.push(['Reference number', job.referenceNumber])
+  if (job.medicalSpecialty) rows.push(['Medical specialty', job.medicalSpecialty])
+  if (job.contactPerson) rows.push(['Contact person', [job.salutation, job.contactPerson].filter(Boolean).join(' ')])
+  if (job.applicationEmail) rows.push(['Application email', <a href={`mailto:${job.applicationEmail}`}>{job.applicationEmail}</a>])
+  if (job.requiredGermanLevel) rows.push(['Required German level', job.requiredGermanLevel])
+  if (job.website) rows.push(['Website', <a href={job.website} target="_blank" rel="noopener noreferrer">{job.website}</a>])
+  if (job.applicationPortal) rows.push(['Application portal', <a href={job.applicationPortal} target="_blank" rel="noopener noreferrer">{job.applicationPortal}</a>])
+  if (job.requiredQualifications?.length) {
+    rows.push(['Required qualifications', (
+      <ul className="jfacts-list">
+        {job.requiredQualifications.map((q, i) => <li key={i}>{q}</li>)}
+      </ul>
+    )])
+  }
+  if (job.mainDuties) rows.push(['Main duties', job.mainDuties])
+  if (job.mandatoryRequirements) rows.push(['Mandatory requirements', job.mandatoryRequirements])
+  if (job.preferredRequirements) rows.push(['Preferred requirements', job.preferredRequirements])
+
+  const flags: string[] = []
+  if (job.requiresDriversLicense) flags.push("Driver's license required")
+  if (job.requiresOwnCar) flags.push('Own car required')
+  if (job.requiresGermanMfaTraining) flags.push('German MFA training required')
+
+  if (rows.length === 0 && flags.length === 0) return null
+
+  return (
+    <div className="jfacts">
+      {flags.length > 0 && (
+        <div className="jfacts-flags">
+          {flags.map((f) => <span className="jtag yellow" key={f}>{f}</span>)}
+        </div>
+      )}
+      {rows.map(([label, value]) => (
+        <div className="jfacts-row" key={label}>
+          <span className="jfacts-label">{label}</span>
+          <span className="jfacts-value">{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Detail({ job, status }: { job: Job; status?: Status }) {
   const [full, setFull] = useState<Job | null>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
@@ -102,6 +151,8 @@ function Detail({ job, status }: { job: Job; status?: Status }) {
         {job.department && <span className="jtag">{job.department}</span>}
         <span>{allLocations.join(' · ')}</span>
       </div>
+
+      {state === 'ok' && full && <Facts job={full} />}
 
       {state === 'loading' && <div className="state" style={{ padding: '8px 0' }}>Loading…</div>}
       {state === 'error' && (

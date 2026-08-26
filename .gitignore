@@ -13,6 +13,11 @@ web/.vite/
 *.log
 .DS_Store
 
+# local secrets (Google OAuth client id/secret, ...) — never committed;
+# see cmd/server/main.go's loadDotEnv and .env.example for the expected keys
+.env
+.env.local
+
 # NOTE: internal/webui/dist IS committed (the embedded, prebuilt frontend) so
 # `go build` produces a working single-binary server without needing npm.
 

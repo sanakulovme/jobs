@@ -205,13 +205,49 @@ APIs). `GET /api/me` reports the signed-in user. Health endpoints stay open.
 
 ### Scheduling
 
-Run the crawler from cron to keep the board fresh, e.g. every hour:
+The registry is currently scoped to MFA/Germany only (`internal/registry/companies.json`),
+and the crawler's default `-jobs` filter keeps developer/IT roles — so a scheduled
+crawl **must** pass `-jobs all`, or it silently saves zero jobs. `scripts/daily-crawl.sh`
+wraps this (`./bin/crawler -data ./data -jobs all`, logs to `./logs/`, prunes logs
+older than 30 days), then chains one auto-apply pass via `./bin/autoapply` (see
+below) so freshly-scraped vacancies get matched against candidates the same day.
+Wire it up once the production server is provisioned, e.g. a crontab entry for
+09:00 Europe/Berlin time daily:
 
 ```cron
-0 * * * * cd /path/to/faang-board && ./bin/crawler >> crawl.log 2>&1
+CRON_TZ=Europe/Berlin
+0 9 * * * /path/to/faang-board/scripts/daily-crawl.sh
 ```
 
-The server picks up the new data automatically.
+(`CRON_TZ` per-line is supported by Debian/Ubuntu's cron; if unavailable, set the
+line's hour to 09:00 in the server's own local timezone instead, or use a systemd
+timer with `OnCalendar=*-*-*  09:00:00 Europe/Berlin`.)
+
+The server picks up the new data automatically — no restart needed.
+
+#### `autoapply`
+
+`cmd/autoapply` runs one auto-apply pass (the same matching/sending logic behind
+the CRM's `/api/crm/run` endpoint and its "Hozir boshlash" button) without going
+through HTTP or the site's 42.uz login — meant for exactly this kind of scheduled
+chaining, where there's no browser session to authenticate.
+
+```
+-data                string   directory the crawler writes vacancies into (default ./data)
+-crm-data             string   CRM data directory (default: -data)
+-count                int      max vacancies to consider this run (0 = server's default cap)
+-test-mode            bool     dry run, no Gmail sends (default true — SAFE)
+-i-understand-this-sends-real-emails
+                       bool     required in addition to -test-mode=false before anything is sent
+-google-client-id / -google-client-secret / -google-redirect-url   same as the server's, or read from .env
+```
+
+`-test-mode` defaults to `true`, and flipping it to `false` alone still refuses to
+run — `-i-understand-this-sends-real-emails` must also be set, on purpose, since
+this is the only command in the repo that can email real employers unattended.
+`scripts/daily-crawl.sh` always runs it in test mode; switching a production
+schedule to real sends is a deliberate, one-time decision to make outside of
+this script, not a flag to flip lightly.
 
 ---
 

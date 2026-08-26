@@ -1,0 +1,156 @@
+/* CRM-only additions — reuses every color/spacing token already defined in
+   ../styles.css (--bg, --sb-bg, --text, --divider, --blue, --green, --yellow,
+   --red, the -tag-bg/-tag-text pairs) so the CRM reads as the same product,
+   not a bolted-on tool. */
+
+.crm-page { max-width: 860px; margin: 0 auto; padding: 24px 32px 25vh; }
+
+.crm-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.crm-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.crm-subtitle { color: var(--text-2); margin-top: 2px; font-size: 13.5px; }
+
+/* ── list rows (candidates, templates, applications) ─────────────────── */
+.crm-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.crm-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--divider);
+  background: var(--bg);
+  cursor: pointer;
+}
+.crm-item:hover { background: var(--hover); border-color: var(--divider-strong); }
+.crm-item-main { flex: 1; min-width: 0; }
+.crm-item-title { font-weight: 600; font-size: 14.5px; }
+.crm-item-sub { color: var(--text-3); font-size: 12.5px; margin-top: 2px; }
+.crm-item-meta { color: var(--text-3); font-size: 12.5px; flex: none; }
+
+/* ── forms ─────────────────────────────────────────────────────────── */
+.crm-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.crm-field-label { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.crm-row { display: flex; gap: 14px; }
+.crm-row > .crm-field { flex: 1; min-width: 0; }
+
+.crm-input, .crm-select, .crm-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--divider-strong);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.crm-input:focus, .crm-select:focus, .crm-textarea:focus { outline: none; border-color: var(--blue); }
+.crm-textarea { resize: vertical; min-height: 70px; font-family: inherit; }
+
+.crm-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+
+/* ── wizard steps ──────────────────────────────────────────────────── */
+.crm-steps { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+.crm-step {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--divider);
+  color: var(--text-2); font-size: 13.5px;
+  cursor: pointer;
+}
+.crm-step.active { border-color: var(--blue); color: var(--text); background: color-mix(in srgb, var(--blue) 8%, transparent); }
+.crm-step.done { color: var(--green); }
+.crm-step-num {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: 11px; font-weight: 600;
+  border: 1px solid currentColor;
+}
+.crm-step.done .crm-step-num { background: var(--green); color: #fff; border-color: var(--green); }
+
+.crm-card { border: 1px solid var(--divider); border-radius: 10px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
+.crm-card-title { font-weight: 600; font-size: 15px; margin-bottom: 3px; }
+.crm-card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 3px; }
+.crm-card-title-row .crm-card-title { margin-bottom: 0; }
+.crm-card-desc { color: var(--text-3); font-size: 12.5px; margin-bottom: 14px; }
+
+/* ── document / profile cards ─────────────────────────────────────── */
+.crm-doc-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.crm-doc-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 6px; border: 1px solid var(--divider);
+}
+.crm-doc-name { flex: 1; min-width: 0; font-size: 13.5px; }
+.crm-doc-meta { color: var(--text-3); font-size: 12px; }
+
+/* ── specialty chip picker ────────────────────────────────────────── */
+.crm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.crm-chip {
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--divider-strong);
+  color: var(--text-2); font-size: 12.5px;
+  cursor: pointer;
+}
+.crm-chip:hover { border-color: var(--blue); }
+.crm-chip.on { background: var(--blue-tag-bg); color: var(--blue-tag-text); border-color: transparent; font-weight: 500; }
+
+/* ── connection status pill (Gmail) ────────────────────────────────── */
+.crm-conn {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-radius: 8px;
+  background: var(--green-tag-bg); color: var(--green-tag-text);
+}
+.crm-conn.off { background: var(--tag); color: var(--text-2); }
+
+.crm-empty { color: var(--text-3); font-size: 13.5px; padding: 30px 0; text-align: center; }
+
+.crm-danger { color: var(--red); }
+.crm-danger:hover { text-decoration: underline; }
+
+/* ── vacancy rows ──────────────────────────────────────────────────── */
+.crm-vac-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.crm-vac-detail { margin-top: 8px; padding: 14px; border: 1px solid var(--divider); border-radius: 8px; }
+.crm-vac-section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); margin: 10px 0 4px; }
+.crm-vac-text { white-space: pre-line; font-size: 13.5px; line-height: 1.5; color: var(--text); }
+
+/* ── modal ─────────────────────────────────────────────────────────── */
+.crm-modal-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(15, 15, 15, 0.4);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 8vh 16px;
+  overflow-y: auto;
+}
+.crm-modal {
+  width: 100%; max-width: 620px;
+  background: var(--bg); border: 1px solid var(--divider); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  padding: 20px;
+}
+.crm-modal-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.crm-modal-title { font-size: 17px; font-weight: 700; flex: 1; }
+.crm-modal-close { flex: none; color: var(--text-3); }
+.crm-modal-close:hover { color: var(--text); }
+
+.crm-match-item { border: 1px solid var(--divider); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.crm-match-top { display: flex; align-items: center; gap: 8px; }
+.crm-match-name { font-weight: 600; font-size: 13.5px; flex: 1; }
+.crm-match-score { font-size: 12.5px; color: var(--text-3); }
+.crm-match-blockers { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ── analytics ─────────────────────────────────────────────────────── */
+.crm-run-panel { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.crm-run-note { color: var(--text-3); font-size: 12.5px; margin-top: 4px; }
+.crm-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
+.crm-tile { border: 1px solid var(--divider); border-radius: 10px; padding: 14px; background: var(--bg); }
+.crm-tile-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+.crm-tile-value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+.crm-tile-sub { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+.crm-chart { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding: 10px 0; }
+.crm-chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; height: 100%; }
+.crm-chart-bars { display: flex; align-items: flex-end; gap: 2px; flex: 1; width: 100%; justify-content: center; }
+.crm-chart-bar { width: 8px; border-radius: 2px 2px 0 0; min-height: 1px; }
+.crm-chart-date { font-size: 9.5px; color: var(--text-3); margin-top: 4px; white-space: nowrap; }
+.crm-chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+.crm-chart-legend-item { display: flex; align-items: center; gap: 5px; }
+.crm-chart-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+.crm-reply-filters { display: flex; gap: 6px; margin: 14px 0; flex-wrap: wrap; }
+.crm-reply-item { border: 1px solid var(--divider); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.crm-reply-top { display: flex; align-items: center; gap: 8px; }
+.crm-reply-employer { font-weight: 600; font-size: 13.5px; flex: 1; }

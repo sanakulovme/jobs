@@ -388,6 +388,14 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// The Gmail-connect landing page and OAuth callback are hit by a
+		// candidate's own browser, not a logged-in 42.uz user — gating them
+		// here would make it impossible for anyone but the admin to ever
+		// connect a Gmail account. See crm_gmail.go.
+		if p == "/api/crm/gmail/callback" || strings.HasPrefix(p, "/gmail-connect/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		u, err := a.RequestUser(r)
 		if err == nil && !isAllowed(u.Id) {

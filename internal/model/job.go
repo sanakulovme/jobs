@@ -30,12 +30,46 @@ type Job struct {
 	UpdatedAt   time.Time `json:"updatedAt"`             // last updated time (best effort)
 	Source      string    `json:"source"`                // ATS/source kind (greenhouse, lever, ...)
 	Categories  []string  `json:"categories,omitempty"`  // normalized categories (see Categorize)
+	Specialties []string  `json:"specialties,omitempty"` // machine-matchable specialty slugs (see crm.Specialties)
+
+	// The fields below are populated by sources that extract structured facts
+	// out of a free-text posting (currently the "bundesagentur" adapter, via
+	// best-effort regex heuristics over German text). They are empty when the
+	// source posting doesn't mention them or the source doesn't support them.
+	ReferenceNumber           string   `json:"referenceNumber,omitempty"`
+	MedicalSpecialty          string   `json:"medicalSpecialty,omitempty"`
+	ApplicationEmail          string   `json:"applicationEmail,omitempty"`
+	ContactPerson             string   `json:"contactPerson,omitempty"`
+	Salutation                string   `json:"salutation,omitempty"`
+	RequiredGermanLevel       string   `json:"requiredGermanLevel,omitempty"`
+	RequiresDriversLicense    bool     `json:"requiresDriversLicense"`
+	RequiresOwnCar            bool     `json:"requiresOwnCar"`
+	RequiresGermanMFATraining bool     `json:"requiresGermanMfaTraining"`
+	RequiredQualifications    []string `json:"requiredQualifications,omitempty"`
+	Website                   string   `json:"website,omitempty"`
+	ApplicationPortal         string   `json:"applicationPortal,omitempty"`
+	MainDuties                string   `json:"mainDuties,omitempty"`
+	MandatoryRequirements     string   `json:"mandatoryRequirements,omitempty"`
+	PreferredRequirements     string   `json:"preferredRequirements,omitempty"`
 }
 
-// Slim returns a copy of the job without the (potentially large) description,
-// suitable for list/search responses.
+// SpecialtyVocabulary is the fixed set of machine-matchable specialty slugs a
+// Job.Specialties entry may take. It is the shared vocabulary candidate
+// application profiles are tagged with too (see internal/crm), so a job and a
+// candidate can be matched by simple slug intersection.
+var SpecialtyVocabulary = []string{
+	"ausbildung", "daf_daz", "dialyse", "kardiologie", "mfa", "mrt",
+	"nephrologie", "ophthalmologie", "orthopadie", "pflege", "rontgen", "zfa",
+}
+
+// Slim returns a copy of the job without the (potentially large) free-text
+// fields, suitable for list/search responses; the full job (via
+// GET /api/jobs/{id}) still carries them.
 func (j Job) Slim() Job {
 	j.Description = ""
+	j.MainDuties = ""
+	j.MandatoryRequirements = ""
+	j.PreferredRequirements = ""
 	return j
 }
 

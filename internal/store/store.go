@@ -99,7 +99,7 @@ func (s *Store) WriteCompany(res CompanyResult) error {
 	if err != nil {
 		return fmt.Errorf("marshal company %s: %w", res.CompanyID, err)
 	}
-	return writeFileAtomic(s.companyPath(res.CompanyID), data)
+	return WriteFileAtomic(s.companyPath(res.CompanyID), data)
 }
 
 // ReadCompany loads a company's result, or an error if it does not exist.
@@ -178,7 +178,7 @@ func (s *Store) WriteStatus(st RunStatus) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(s.dir, "status.json"), data)
+	return WriteFileAtomic(filepath.Join(s.dir, "status.json"), data)
 }
 
 // ReadStatus loads the last run status, if present.
@@ -228,9 +228,11 @@ func (s *Store) LatestMTime() time.Time {
 
 // --- helpers ---
 
-// writeFileAtomic writes data to path via a temp file in the same directory
-// followed by an atomic rename, fsyncing the file first.
-func writeFileAtomic(path string, data []byte) error {
+// WriteFileAtomic writes data to path via a temp file in the same directory
+// followed by an atomic rename, fsyncing the file first. Exported so other
+// packages (internal/crm) that persist their own JSON files under ./data can
+// reuse the same crash-safe write instead of duplicating it.
+func WriteFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {

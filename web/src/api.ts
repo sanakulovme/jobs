@@ -14,6 +14,24 @@ export type Job = {
   updatedAt: string
   source: string
   categories?: string[]
+
+  // Best-effort structured fields (currently populated by the "bundesagentur"
+  // source only) — empty when the source posting doesn't mention them.
+  referenceNumber?: string
+  medicalSpecialty?: string
+  applicationEmail?: string
+  contactPerson?: string
+  salutation?: string
+  requiredGermanLevel?: string
+  requiresDriversLicense?: boolean
+  requiresOwnCar?: boolean
+  requiresGermanMfaTraining?: boolean
+  requiredQualifications?: string[]
+  website?: string
+  applicationPortal?: string
+  mainDuties?: string
+  mandatoryRequirements?: string
+  preferredRequirements?: string
 }
 
 export type Facet = { value: string; label?: string; count: number; parent?: string }

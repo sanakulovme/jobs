@@ -386,6 +386,28 @@ input { font: inherit; color: inherit; }
 .jdesc img { max-width: 100%; }
 .jdetail-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 
+.jfacts {
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--sb-bg);
+}
+.jfacts-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.jfacts-row {
+  display: flex;
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--divider);
+  font-size: 13.5px;
+}
+.jfacts-row:first-of-type { border-top: none; }
+.jfacts-label { flex: 0 0 190px; color: var(--text-3); }
+.jfacts-value { flex: 1; color: var(--text); white-space: pre-line; word-break: break-word; }
+.jfacts-value a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+.jfacts-list { margin: 0; padding-left: 18px; }
+.jfacts-list li { margin: 2px 0; }
+
 .btn-primary {
   display: inline-flex; align-items: center; gap: 5px;
   height: 28px; padding: 0 10px; border-radius: 4px;

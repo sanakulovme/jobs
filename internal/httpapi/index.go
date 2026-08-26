@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"errors"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -10,6 +12,11 @@ import (
 	"faangjobs/internal/model"
 	"faangjobs/internal/store"
 )
+
+// manualCompanyID is the fixed, crawler-never-touches-it bucket that holds
+// vacancies created by hand through the CRM ("Yangi vakansiya"), as opposed
+// to ones a source adapter crawled.
+const manualCompanyID = "manual"
 
 // Index is a hot-reloadable, in-memory, searchable view of the crawled data.
 // Reads are lock-free via an atomic snapshot pointer; a background reloader
@@ -153,6 +160,41 @@ func (i *Index) readCompanyCached(companyID string) *store.CompanyResult {
 	i.descCache[companyID] = cachedCompany{gen: gen, res: res}
 	i.descMu.Unlock()
 	return res
+}
+
+// AddManualJob appends a manually-created vacancy (the CRM's "Yangi
+// vakansiya") to the "manual" company bucket and reloads the index so it's
+// immediately visible — the same bucket every manual entry accumulates into,
+// which the crawler never writes and so never clobbers.
+func (i *Index) AddManualJob(job model.Job) (model.Job, error) {
+	res, err := i.store.ReadCompany(manualCompanyID)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return model.Job{}, err
+		}
+		res = &store.CompanyResult{CompanyID: manualCompanyID, Company: "Qo'lda kiritilgan", ATS: "manual", Slug: "manual"}
+	}
+
+	job.CompanyID = manualCompanyID
+	job.Source = "manual"
+	if job.ID == "" {
+		job.ID = manualCompanyID + "~" + model.StableID(job.Title, job.Company, time.Now().UTC().String())
+	}
+	if job.PostedAt.IsZero() {
+		job.PostedAt = time.Now().UTC()
+	}
+	job.UpdatedAt = time.Now().UTC()
+
+	res.OK = true
+	res.FetchedAt = time.Now().UTC()
+	res.Jobs = append(res.Jobs, job)
+	res.JobCount = len(res.Jobs)
+
+	if err := i.store.WriteCompany(*res); err != nil {
+		return model.Job{}, err
+	}
+	i.Reload()
+	return job, nil
 }
 
 // Snapshot returns the current immutable snapshot.

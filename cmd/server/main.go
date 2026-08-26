@@ -16,7 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	"faangjobs/internal/crm"
 	"faangjobs/internal/dataset"
+	"faangjobs/internal/gmail"
 	"faangjobs/internal/httpapi"
 	"faangjobs/internal/store"
 )
@@ -27,6 +29,37 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// loadDotEnv reads simple KEY=VALUE lines from path (if present) into the
+// process environment, so secrets like the Google OAuth client id/secret can
+// live in a git-ignored local file instead of being retyped on every launch.
+// A real environment variable set by the caller always wins over the file —
+// this only fills in what's still unset. Blank lines and lines starting with
+// # are ignored; values may be wrapped in matching single or double quotes.
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // no .env file — not an error, envOr's own defaults still apply
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if n := len(val); n >= 2 && (val[0] == '"' && val[n-1] == '"' || val[0] == '\'' && val[n-1] == '\'') {
+			val = val[1 : n-1]
+		}
+		if _, exists := os.LookupEnv(key); !exists {
+			os.Setenv(key, val)
+		}
+	}
 }
 
 // diskHasData reports whether dir/companies contains any company JSON files,
@@ -45,6 +78,8 @@ func diskHasData(dir string) bool {
 }
 
 func main() {
+	loadDotEnv(".env")
+
 	var (
 		dataDir  = flag.String("data", "./data", "directory to read crawled data from")
 		addr     = flag.String("addr", ":8080", "listen address")
@@ -59,10 +94,32 @@ func main() {
 		authAPI   = flag.String("auth-api", envOr("FAANGJOBS_AUTH_API", "https://api.42.uz"), "base URL of the 42.uz auth API")
 		loginURL  = flag.String("login-url", envOr("FAANGJOBS_LOGIN_URL", "https://42.uz/login"), "where unauthenticated visitors are redirected")
 		enrollURL = flag.String("enroll-url", envOr("FAANGJOBS_ENROLL_URL", "https://42.uz/course/devops"), "where authenticated non-enrollees are redirected")
+
+		// Candidate/vacancy CRM (auto-apply). Always on — it lives alongside the
+		// job data under -data/crm and is independent of -embedded, since CRM
+		// records are never part of the embedded snapshot.
+		crmDataDir = flag.String("crm-data", "", "directory for CRM data (candidates, applications, ...); defaults to -data")
+
+		// Gmail OAuth (candidate auto-apply sending). Enabled iff both the
+		// client id and secret are set; get them from Google Cloud Console ->
+		// APIs & Services -> Credentials. The redirect URL must match exactly
+		// what's registered there.
+		googleClientID     = flag.String("google-client-id", envOr("FAANGJOBS_GOOGLE_CLIENT_ID", ""), "Google OAuth client ID (empty = Gmail integration disabled)")
+		googleClientSecret = flag.String("google-client-secret", envOr("FAANGJOBS_GOOGLE_CLIENT_SECRET", ""), "Google OAuth client secret")
+		googleRedirectURL  = flag.String("google-redirect-url", envOr("FAANGJOBS_GOOGLE_REDIRECT_URL", ""), "OAuth redirect URI; must match Google Cloud Console exactly (e.g. http://localhost:8080/api/crm/gmail/callback)")
 	)
 	flag.Parse()
 
 	logger := log.New(os.Stderr, "", log.LstdFlags)
+
+	crmDir := *crmDataDir
+	if crmDir == "" {
+		crmDir = *dataDir
+	}
+	crmStore, err := crm.New(crmDir)
+	if err != nil {
+		logger.Fatalf("open crm store: %v", err)
+	}
 
 	// Data source selection: an explicit -embedded flag wins; otherwise prefer
 	// a live ./data folder (fresher + hot-reloadable) and fall back to the
@@ -103,7 +160,13 @@ func main() {
 		AuthAPI:   *authAPI,
 		LoginURL:  *loginURL,
 		EnrollURL: *enrollURL,
-		Log:       logger.Printf,
+		CRM:       crmStore,
+		Gmail: gmail.Config{
+			ClientID:     *googleClientID,
+			ClientSecret: *googleClientSecret,
+			RedirectURL:  *googleRedirectURL,
+		},
+		Log: logger.Printf,
 	})
 	if err != nil {
 		logger.Fatalf("build handler: %v", err)

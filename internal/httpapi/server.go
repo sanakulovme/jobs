@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"faangjobs/internal/crm"
+	"faangjobs/internal/gmail"
 	"faangjobs/internal/webui"
 )
 
@@ -23,7 +25,15 @@ type Config struct {
 	AuthAPI   string // base URL of the auth API (e.g. https://42.uz)
 	LoginURL  string // where unauthenticated visitors are sent
 	EnrollURL string // where authenticated non-enrollees are sent
-	Log       func(format string, args ...any)
+	// CRM is the candidate/vacancy CRM store (see internal/crm). Nil disables
+	// every /api/crm/* route.
+	CRM *crm.Store
+	// Gmail configures the candidate-Gmail-connect OAuth flow (see
+	// internal/gmail and crm_gmail.go). A zero value disables it — every
+	// Gmail route responds 503 rather than being unreachable, so the
+	// frontend can show a clear "not configured" state instead of a 404.
+	Gmail gmail.Config
+	Log   func(format string, args ...any)
 }
 
 // Handler builds the complete HTTP handler: JSON API + embedded SPA, wrapped
@@ -36,6 +46,12 @@ func Handler(idx *Index, cfg Config) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	NewAPI(idx).Register(mux)
+	NewCRMAPI(cfg.CRM, idx, gmail.New(cfg.Gmail)).Register(mux)
+	if cfg.Gmail.Enabled() {
+		log("Gmail integration enabled (redirect: %s)", cfg.Gmail.RedirectURL)
+	} else {
+		log("Gmail integration disabled (no Google client ID/secret configured)")
+	}
 
 	// 42.uz authentication (nil/no-op unless a JWT secret is configured).
 	auth := NewAuth(cfg, log)

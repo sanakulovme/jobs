@@ -31,7 +31,10 @@ import (
 //	titlePath, locationPath, urlPath, deptPath, postedPath, descPath, idPath, remotePath
 //	            dot-paths within each job object
 //	urlPrefix   prepended to the extracted url if it is relative
-//	company     overrides the display company name
+//	company     overrides the display company name (static, applied to every job)
+//	companyPath dot-path to a per-job employer name (e.g. an aggregator listing
+//	            many real employers); when set and non-empty for an item, it wins
+//	            over the static "company" name for that job
 type generic struct{}
 
 func init() { Register(generic{}) }
@@ -65,6 +68,7 @@ func (generic) Fetch(ctx context.Context, f *Fetcher, c registry.Company) ([]mod
 		"desc":  configStr(c, "descPath", "description"),
 		"id":    configStr(c, "idPath", "id"),
 		"rem":   configStr(c, "remotePath", "remote"),
+		"comp":  configStr(c, "companyPath", ""),
 	}
 	companyName := configStr(c, "company", c.Name)
 
@@ -116,9 +120,13 @@ func (generic) Fetch(ctx context.Context, f *Fetcher, c registry.Company) ([]mod
 				rawURL = strings.TrimRight(urlPrefix, "/") + "/" + strings.TrimLeft(rawURL, "/")
 			}
 			id := getString(getPath(m, fields["id"]))
+			company := companyName
+			if fields["comp"] != "" {
+				company = firstNonEmpty(getString(getPath(m, fields["comp"])), companyName)
+			}
 			jobs = append(jobs, model.Job{
 				ID:          c.ID + "~" + model.StableID(firstNonEmpty(id, rawURL)),
-				Company:     companyName,
+				Company:     company,
 				Title:       getString(getPath(m, fields["title"])),
 				Location:    getString(getPath(m, fields["loc"])),
 				Department:  getString(getPath(m, fields["dept"])),

@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { CrmShell } from './crm/CrmShell'
 import './styles.css'
 
 class ErrorBoundary extends React.Component<
@@ -26,10 +27,10 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+const isCrm = location.pathname === '/crm' || location.pathname.startsWith('/crm/')
+
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    <ErrorBoundary>{isCrm ? <CrmShell /> : <App />}</ErrorBoundary>
   </React.StrictMode>,
 )
