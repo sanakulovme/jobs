@@ -3,8 +3,6 @@ import { api } from './api'
 import type { Facet, Job, Me, Stats } from './api'
 import { numberFmt, relativeDate } from './format'
 import { JobRow } from './JobRow'
-import { STATUS_LABELS, STATUSES, useTracker } from './applied'
-import type { Status } from './applied'
 import { Check, Menu, Moon, SearchIcon, Sun, XIcon } from './icons'
 
 const PAGE_SIZE = 25
@@ -14,22 +12,12 @@ const COUNTRY_LIMIT = 16
 const COUNTRY_LIMIT_IN_REGION = 40
 const STATE_LIMIT = 60
 
-type Tab = 'all' | 'tracker'
-
 const SORTS: { value: string; label: string }[] = [
   { value: 'recent', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
   { value: 'title', label: 'Title A–Z' },
   { value: 'company', label: 'Company A–Z' },
 ]
-
-const STATUS_DOT: Record<Status, string> = {
-  applied: 'var(--blue)',
-  interviewing: 'var(--yellow)',
-  offer: 'var(--green)',
-  rejected: 'var(--red)',
-  ghosted: 'var(--text-3)',
-}
 
 export function App() {
   // ── theme ──────────────────────────────────────────────────────────
@@ -69,8 +57,6 @@ export function App() {
   }, [])
 
   // ── view state ─────────────────────────────────────────────────────
-  const [tab, setTab] = useState<Tab>('all')
-  const [statusFilter, setStatusFilter] = useState<'' | Status>('')
   const [qInput, setQInput] = useState('')
   const [q, setQ] = useState('')
   const [category, setCategory] = useState('')
@@ -114,7 +100,6 @@ export function App() {
   const reqId = useRef(0)
 
   useEffect(() => {
-    if (tab !== 'all') return
     const id = ++reqId.current
     const ctrl = new AbortController()
     setLoading(true)
@@ -140,33 +125,7 @@ export function App() {
         setLoading(false)
       })
     return () => ctrl.abort()
-  }, [tab, q, category, country, region, state, remote, relocation, sort, page, retryNonce])
-
-  // ── tracker view ───────────────────────────────────────────────────
-  const tracked = useTracker()
-  const statusCounts = useMemo(() => {
-    const counts = { applied: 0, interviewing: 0, offer: 0, rejected: 0, ghosted: 0 } as Record<
-      Status,
-      number
-    >
-    for (const e of Object.values(tracked)) counts[e.status]++
-    return counts
-  }, [tracked])
-  const trackedCount = Object.keys(tracked).length
-
-  const trackerJobs = useMemo(() => {
-    const needle = q.toLowerCase()
-    return Object.values(tracked)
-      .filter((e) => !statusFilter || e.status === statusFilter)
-      .sort((a, b) => b.at - a.at)
-      .map((e) => e.job)
-      .filter(
-        (j) =>
-          !needle ||
-          j.title.toLowerCase().includes(needle) ||
-          j.company.toLowerCase().includes(needle),
-      )
-  }, [tracked, statusFilter, q])
+  }, [q, category, country, region, state, remote, relocation, sort, page, retryNonce])
 
   const hasFilters =
     q !== '' ||
@@ -176,8 +135,7 @@ export function App() {
     state !== '' ||
     remote ||
     relocation
-  const shown = tab === 'all' ? jobs : trackerJobs
-  const hasMore = tab === 'all' && !error && jobs.length < total
+  const hasMore = !error && jobs.length < total
 
   function clearFilters() {
     setQInput('')
@@ -256,12 +214,6 @@ export function App() {
     }
   }
 
-  function openTracker(status: '' | Status) {
-    setTab('tracker')
-    setStatusFilter(status)
-    setSidebarOpen(false)
-  }
-
   const sidebar = (
     <aside className={'sidebar' + (sidebarOpen ? ' open' : '')} aria-label="Filters">
       <div className="sb-brand">
@@ -304,39 +256,6 @@ export function App() {
           </button>
         )}
       </label>
-
-      <div className="sb-section" role="group" aria-label="Views">
-        <div className="sb-label">Views</div>
-        <button
-          className={'sb-item' + (tab === 'all' ? ' on' : '')}
-          onClick={() => pickAndClose(setTab)('all')}
-        >
-          <span className="sb-item-text">All jobs</span>
-          <span className="sb-count">{stats ? numberFmt(stats.totalJobs) : ''}</span>
-        </button>
-        <button
-          className={'sb-item' + (tab === 'tracker' && statusFilter === '' ? ' on' : '')}
-          onClick={() => openTracker('')}
-        >
-          <span className="sb-item-text">My applications</span>
-          <span className="sb-count">{trackedCount || ''}</span>
-        </button>
-      </div>
-
-      <div className="sb-section" role="group" aria-label="Pipeline">
-        <div className="sb-label">Pipeline</div>
-        {STATUSES.map((s) => (
-          <button
-            key={s}
-            className={'sb-item' + (tab === 'tracker' && statusFilter === s ? ' on' : '')}
-            onClick={() => openTracker(s)}
-          >
-            <span className="sb-dot" style={{ background: STATUS_DOT[s] }} aria-hidden="true" />
-            <span className="sb-item-text">{STATUS_LABELS[s]}</span>
-            <span className="sb-count">{statusCounts[s] || ''}</span>
-          </button>
-        ))}
-      </div>
 
       <div className="sb-section" role="group" aria-label="Region">
         <div className="sb-label">Region</div>
@@ -479,9 +398,6 @@ export function App() {
     </aside>
   )
 
-  const trackerTitle =
-    statusFilter === '' ? 'My applications' : STATUS_LABELS[statusFilter as Status]
-
   // Profile badge: first 4 characters of the 42.uz username (sans "@").
   const avatarLabel = useMemo(() => {
     if (!me || me.anonymous) return ''
@@ -512,48 +428,33 @@ export function App() {
 
         <div className="page">
           <div className="page-icon" aria-hidden="true">🌍</div>
-          <h1 className="page-title">
-            {tab === 'all' ? '42 FaangJobs' : trackerTitle}
-          </h1>
-          {tab === 'all' && (
-            <>
-              <p className="page-desc">
-                Software, data, infrastructure and security roles at top tech companies —
-                every opening, everywhere. One click takes you to the original posting.
-              </p>
-              <p className="page-stats">
-                {stats
-                  ? `${numberFmt(stats.totalJobs)} roles · ${numberFmt(stats.companies)} companies · ` +
-                    (relativeDate(stats.lastUpdated) === 'now'
-                      ? 'updated just now'
-                      : `updated ${relativeDate(stats.lastUpdated)} ago`)
-                  : ' '}
-              </p>
-            </>
-          )}
-          {tab === 'tracker' && (
-            <p className="page-desc">
-              Track every application through its pipeline — set a status from any job’s details.
-            </p>
-          )}
+          <h1 className="page-title">42 FaangJobs</h1>
+          <p className="page-desc">
+            Software, data, infrastructure and security roles at top tech companies —
+            every opening, everywhere. One click takes you to the original posting.
+          </p>
+          <p className="page-stats">
+            {stats
+              ? `${numberFmt(stats.totalJobs)} roles · ${numberFmt(stats.companies)} companies · ` +
+                (relativeDate(stats.lastUpdated) === 'now'
+                  ? 'updated just now'
+                  : `updated ${relativeDate(stats.lastUpdated)} ago`)
+              : ' '}
+          </p>
 
           <div className="countline" role="status">
-            {tab === 'tracker'
-              ? `${numberFmt(trackerJobs.length)} ${trackerJobs.length === 1 ? 'job' : 'jobs'}`
-              : loading
-                ? 'Loading…'
-                : `${numberFmt(total)} ${total === 1 ? 'job' : 'jobs'}`}
+            {loading ? 'Loading…' : `${numberFmt(total)} ${total === 1 ? 'job' : 'jobs'}`}
           </div>
 
           <div className="list">
-            {tab === 'all' && error && (
+            {error && (
               <div className="state">
                 <div className="h">Couldn’t load jobs — {error}</div>
                 <button onClick={() => setRetryNonce((n) => n + 1)}>Retry</button>
               </div>
             )}
 
-            {tab === 'all' && !error && loading && page === 1 && (
+            {!error && loading && page === 1 && (
               <>
                 {Array.from({ length: 10 }).map((_, i) => (
                   <div className="skel-row" key={i}>
@@ -565,27 +466,18 @@ export function App() {
               </>
             )}
 
-            {!error && !(tab === 'all' && loading && page === 1) && shown.length === 0 && (
+            {!error && !(loading && page === 1) && jobs.length === 0 && (
               <div className="state">
-                <div className="h">
-                  {tab === 'tracker'
-                    ? trackedCount === 0
-                      ? 'Nothing tracked yet — click Apply on any job.'
-                      : statusFilter
-                        ? `No jobs marked ${STATUS_LABELS[statusFilter as Status].toLowerCase()}.`
-                        : 'No tracked jobs match your search.'
-                    : 'No jobs match.'}
-                </div>
-                {tab === 'all' && hasFilters && <button onClick={clearFilters}>Clear filters</button>}
+                <div className="h">No jobs match.</div>
+                {hasFilters && <button onClick={clearFilters}>Clear filters</button>}
               </div>
             )}
 
-            {!(tab === 'all' && (error || (loading && page === 1))) &&
-              shown.map((job) => (
+            {!(error || (loading && page === 1)) &&
+              jobs.map((job) => (
                 <JobRow
                   key={job.id}
                   job={job}
-                  status={tracked[job.id]?.status}
                   expanded={expandedId === job.id}
                   onToggle={() => setExpandedId((id) => (id === job.id ? null : job.id))}
                 />

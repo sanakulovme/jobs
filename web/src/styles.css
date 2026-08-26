@@ -198,10 +198,6 @@ input { font: inherit; color: inherit; }
   color: var(--blue);
 }
 .sb-item.on .sb-check { border-color: var(--blue); }
-.sb-dot {
-  width: 8px; height: 8px; flex: none;
-  border-radius: 50%;
-}
 .sb-clear { color: var(--text-3); }
 .sb-clear:hover { color: var(--text); }
 
@@ -327,7 +323,6 @@ input { font: inherit; color: inherit; }
   min-height: 34px;
 }
 .jrow:hover { background: var(--hover); }
-.jrow.done .jtitle { color: var(--text-3); }
 
 .jtoggle {
   display: inline-flex; align-items: center; justify-content: center;
@@ -374,8 +369,6 @@ input { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 .japply:hover { background: var(--hover-strong); color: var(--blue); }
-.japply.done { color: var(--green); }
-.japply.done:hover { color: var(--green); }
 
 /* expanded detail — a Notion toggle block */
 .jdetail {
@@ -427,28 +420,6 @@ input { font: inherit; color: inherit; }
   color: var(--text-2); font-size: 13.5px;
 }
 .btn-quiet:hover { background: var(--hover); color: var(--text); }
-
-/* application status picker inside the expanded detail */
-.jstatus-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  margin-top: 12px; padding-top: 10px;
-  border-top: 1px solid var(--divider);
-}
-.jstatus-label { color: var(--text-3); font-size: 12.5px; margin-right: 2px; }
-.jstatus {
-  height: 25px; padding: 0 9px; border-radius: 4px;
-  border: 1px solid var(--divider);
-  color: var(--text-2); font-size: 12.5px;
-}
-.jstatus:hover { background: var(--hover); color: var(--text); }
-.jstatus.on { border-color: transparent; font-weight: 500; }
-.jstatus.on.blue { background: var(--blue-tag-bg); color: var(--blue-tag-text); }
-.jstatus.on.yellow { background: var(--yellow-tag-bg); color: var(--yellow-tag-text); }
-.jstatus.on.green { background: var(--green-tag-bg); color: var(--green-tag-text); }
-.jstatus.on.red { background: var(--red-tag-bg); color: var(--red-tag-text); }
-.jstatus.on.gray { background: var(--tag); color: var(--text); }
-.jstatus.clear { border-color: transparent; color: var(--text-3); }
-.jstatus.clear:hover { color: var(--text); }
 
 /* ── states ────────────────────────────────────────────────────────── */
 .skel-row { height: 34px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--divider); }

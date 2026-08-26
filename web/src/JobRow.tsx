@@ -3,32 +3,20 @@ import type { ReactNode } from 'react'
 import type { Job } from './api'
 import { api } from './api'
 import { cleanLocation, cleanTitle, relativeDate, sanitizeHTML } from './format'
-import { STATUS_LABELS, STATUSES, tracker } from './applied'
-import type { Status } from './applied'
-import { ArrowUpRight, Check, Triangle } from './icons'
+import { ArrowUpRight, Triangle } from './icons'
 
 type Props = {
   job: Job
-  status?: Status
   expanded: boolean
   onToggle: () => void
 }
 
-const STATUS_TAG_CLASS: Record<Status, string> = {
-  applied: 'blue',
-  interviewing: 'yellow',
-  offer: 'green',
-  rejected: 'red',
-  ghosted: 'gray',
-}
-
 // A single database-style row: toggle triangle, title + company, right-aligned
-// quiet properties, and a one-click Apply that opens the source posting and
-// records the application. Tracked jobs show their pipeline status.
-export function JobRow({ job, status, expanded, onToggle }: Props) {
+// quiet properties, and a one-click Apply that opens the source posting.
+export function JobRow({ job, expanded, onToggle }: Props) {
   return (
     <div className="jitem">
-      <div className={'jrow' + (status ? ' done' : '')}>
+      <div className="jrow">
         <button
           className={'jtoggle' + (expanded ? ' open' : '')}
           onClick={onToggle}
@@ -42,29 +30,22 @@ export function JobRow({ job, status, expanded, onToggle }: Props) {
           <span className="jco" title={job.company}>{job.company}</span>
         </button>
         <div className="jside">
-          {status ? (
-            <span className={'jtag ' + STATUS_TAG_CLASS[status]}>{STATUS_LABELS[status]}</span>
-          ) : (
-            <>
-              {job.remote && <span className="jtag blue">Remote</span>}
-              {job.relocation && <span className="jtag green">Relocation</span>}
-            </>
-          )}
+          {job.remote && <span className="jtag blue">Remote</span>}
+          {job.relocation && <span className="jtag green">Relocation</span>}
           <span className="jloc" title={job.location}>{cleanLocation(job.location)}</span>
           <span className="jtime">{relativeDate(job.postedAt)}</span>
           <a
-            className={'japply' + (status ? ' done' : '')}
+            className="japply"
             href={job.url}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => tracker.mark(job)}
             aria-label={`Apply at ${job.company} (opens the original posting)`}
           >
-            {status ? <><Check /> Applied</> : <>Apply <ArrowUpRight /></>}
+            Apply <ArrowUpRight />
           </a>
         </div>
       </div>
-      {expanded && <Detail job={job} status={status} />}
+      {expanded && <Detail job={job} />}
     </div>
   )
 }
@@ -117,7 +98,7 @@ function Facts({ job }: { job: Job }) {
   )
 }
 
-function Detail({ job, status }: { job: Job; status?: Status }) {
+function Detail({ job }: { job: Job }) {
   const [full, setFull] = useState<Job | null>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
 
@@ -170,34 +151,9 @@ function Detail({ job, status }: { job: Job; status?: Status }) {
         ))}
 
       <div className="jdetail-actions">
-        <a
-          className="btn-primary"
-          href={job.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => tracker.mark(job)}
-        >
+        <a className="btn-primary" href={job.url} target="_blank" rel="noopener noreferrer">
           Apply <ArrowUpRight />
         </a>
-      </div>
-
-      <div className="jstatus-row" role="group" aria-label="Application status">
-        <span className="jstatus-label">Status</span>
-        {STATUSES.map((s) => (
-          <button
-            key={s}
-            className={'jstatus' + (status === s ? ' on ' + STATUS_TAG_CLASS[s] : '')}
-            aria-pressed={status === s}
-            onClick={() => (status === s ? tracker.remove(job.id) : tracker.setStatus(job, s))}
-          >
-            {STATUS_LABELS[s]}
-          </button>
-        ))}
-        {status && (
-          <button className="jstatus clear" onClick={() => tracker.remove(job.id)}>
-            Clear
-          </button>
-        )}
       </div>
     </div>
   )
