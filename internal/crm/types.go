@@ -61,9 +61,95 @@ type ApplicationProfile struct {
 	UpdatedAt                  time.Time          `json:"updatedAt"`
 }
 
-// Candidate is one person the firm is placing. Gmail token fields are set by
-// internal/gmail and persist to disk like everything else here, but must
-// never leave the server as-is — always send Redacted() to the frontend.
+// Direction is the one recruiting vertical a candidate belongs to. Exactly
+// one per candidate — a higher-level classification than Specialties (which
+// tags MFA vacancies/profiles within the mfa_zfa direction and stays
+// unrelated to this). Only DirectionMFAZFA has a working scraper today; the
+// other three exist so the CRM can show them as "tez orada" (coming soon)
+// without a source site wired up yet.
+const (
+	DirectionMFAZFA     = "mfa_zfa"
+	DirectionAusbildung = "ausbildung"
+	DirectionSprachkurs = "til_kursi"
+	DirectionAuPair     = "au_pair"
+)
+
+// Directions lists every valid Candidate.Direction value, in display order.
+var Directions = []string{DirectionMFAZFA, DirectionAusbildung, DirectionSprachkurs, DirectionAuPair}
+
+// IsDirection reports whether d is one of the known Directions values.
+func IsDirection(d string) bool {
+	for _, v := range Directions {
+		if v == d {
+			return true
+		}
+	}
+	return false
+}
+
+// GmailMailbox is one Gmail account connected to a candidate. A candidate
+// may have up to MaxMailboxesPerCandidate connected at once — sending
+// rotates across whichever ones still have room under their own DailyCap,
+// so one mailbox hitting Gmail's own sending limits doesn't stall a
+// candidate's applications. Token fields must round-trip through storage
+// (real json tags) but are stripped by Candidate.Redacted() before ever
+// reaching the frontend.
+type GmailMailbox struct {
+	Slot        string    `json:"slot"` // "1".."4", stable once assigned
+	Email       string    `json:"email,omitempty"`
+	ConnectedAt time.Time `json:"connectedAt,omitempty"`
+
+	AccessToken    string    `json:"accessToken,omitempty"`
+	RefreshToken   string    `json:"refreshToken,omitempty"`
+	Scope          string    `json:"scope,omitempty"`
+	TokenExpiresAt time.Time `json:"tokenExpiresAt,omitempty"`
+
+	// DailyCap is the admin-set max sends/day for this mailbox (1..250,
+	// see MaxDailyCapPerMailbox — a self-imposed ceiling well under Gmail's
+	// own ~500/day limit for regular accounts). SentToday counts sends on
+	// SentTodayDate (YYYY-MM-DD, candidate/server local date); a date
+	// mismatch means the counter is stale and reads as 0 until next reset.
+	DailyCap      int    `json:"dailyCap"`
+	SentToday     int    `json:"sentToday"`
+	SentTodayDate string `json:"sentTodayDate,omitempty"`
+}
+
+// MaxMailboxesPerCandidate caps how many Gmail accounts one candidate may
+// connect at once.
+const MaxMailboxesPerCandidate = 4
+
+// MaxDailyCapPerMailbox is the hard ceiling an admin can set for one
+// mailbox's DailyCap — a self-imposed safety margin under Gmail's own daily
+// sending limits, not a Google-enforced number.
+const MaxDailyCapPerMailbox = 250
+
+// Connected reports whether this mailbox has completed OAuth (has a refresh
+// token to work with), independent of whether the access token has expired.
+func (m GmailMailbox) Connected() bool { return m.Email != "" && m.RefreshToken != "" }
+
+// sentTodayCount returns m.SentToday, or 0 if its counter is for a previous
+// day (today is passed in as YYYY-MM-DD so callers share one clock read).
+func (m GmailMailbox) sentTodayCount(today string) int {
+	if m.SentTodayDate != today {
+		return 0
+	}
+	return m.SentToday
+}
+
+// remainingCapacity returns how many more sends this mailbox can make today.
+func (m GmailMailbox) remainingCapacity(today string) int {
+	dailyCap := m.DailyCap
+	if dailyCap <= 0 {
+		dailyCap = MaxDailyCapPerMailbox
+	}
+	remaining := dailyCap - m.sentTodayCount(today)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+// Candidate is one person the firm is placing.
 type Candidate struct {
 	ID             string `json:"id"`
 	FullName       string `json:"fullName"`
@@ -74,15 +160,10 @@ type Candidate struct {
 	CurrentCountry string `json:"currentCountry,omitempty"`
 	Notes          string `json:"notes,omitempty"`
 
-	GmailEmail       string    `json:"gmailEmail,omitempty"`
-	GmailConnectedAt time.Time `json:"gmailConnectedAt,omitempty"`
-	// The four fields below must round-trip through storage (real json tags),
-	// but Redacted() strips them before a Candidate ever reaches an HTTP
-	// response — see the comment there.
-	GmailAccessToken    string    `json:"gmailAccessToken,omitempty"`
-	GmailRefreshToken   string    `json:"gmailRefreshToken,omitempty"`
-	GmailTokenExpiresAt time.Time `json:"gmailTokenExpiresAt,omitempty"`
-	GmailScope          string    `json:"gmailScope,omitempty"`
+	// Direction is one of the Directions consts — set at creation, required.
+	Direction string `json:"direction"`
+
+	GmailMailboxes []GmailMailbox `json:"gmailMailboxes,omitempty"`
 
 	Documents []Document           `json:"documents,omitempty"`
 	Profiles  []ApplicationProfile `json:"profiles,omitempty"`
@@ -91,10 +172,43 @@ type Candidate struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// GmailConnected reports whether this candidate has a usable Gmail
-// connection (a refresh token to work with), independent of whether the
-// current access token has expired.
-func (c Candidate) GmailConnected() bool { return c.GmailEmail != "" && c.GmailRefreshToken != "" }
+// HasCapacity reports whether this candidate has at least one connected
+// mailbox with remaining daily send capacity today.
+func (c Candidate) HasCapacity() bool {
+	_, ok := c.NextMailbox()
+	return ok
+}
+
+// NextMailbox picks which connected mailbox the next send should go
+// through: the connected mailbox with remaining capacity today that was
+// connected longest ago (simple round-robin — spreads load evenly across
+// slots rather than hammering slot 1 until it's exhausted every day).
+// Returns (nil-ish zero value, false) if no mailbox has room.
+func (c Candidate) NextMailbox() (GmailMailbox, bool) {
+	today := time.Now().UTC().Format("2006-01-02")
+	var best GmailMailbox
+	found := false
+	for _, m := range c.GmailMailboxes {
+		if !m.Connected() || m.remainingCapacity(today) <= 0 {
+			continue
+		}
+		if !found || m.ConnectedAt.Before(best.ConnectedAt) {
+			best = m
+			found = true
+		}
+	}
+	return best, found
+}
+
+// Mailbox looks up one of this candidate's mailboxes by slot.
+func (c Candidate) Mailbox(slot string) (GmailMailbox, bool) {
+	for _, m := range c.GmailMailboxes {
+		if m.Slot == slot {
+			return m, true
+		}
+	}
+	return GmailMailbox{}, false
+}
 
 // Document looks up one of this candidate's documents by id.
 func (c Candidate) Document(id string) (Document, bool) {
@@ -112,10 +226,17 @@ func (c Candidate) Document(id string) (Document, bool) {
 // JSON store (that's why they're not simply json:"-"); Redacted is what
 // draws the line between "persisted" and "ever leaves the server."
 func (c Candidate) Redacted() Candidate {
-	c.GmailAccessToken = ""
-	c.GmailRefreshToken = ""
-	c.GmailScope = ""
-	c.GmailTokenExpiresAt = time.Time{}
+	if len(c.GmailMailboxes) > 0 {
+		boxes := make([]GmailMailbox, len(c.GmailMailboxes))
+		for i, m := range c.GmailMailboxes {
+			m.AccessToken = ""
+			m.RefreshToken = ""
+			m.Scope = ""
+			m.TokenExpiresAt = time.Time{}
+			boxes[i] = m
+		}
+		c.GmailMailboxes = boxes
+	}
 	if len(c.Documents) > 0 {
 		docs := make([]Document, len(c.Documents))
 		for i, d := range c.Documents {
@@ -211,6 +332,7 @@ type Reply struct {
 type GmailConnectToken struct {
 	Token       string    `json:"token"`
 	CandidateID string    `json:"candidateId"`
+	Slot        string    `json:"slot"` // which of the candidate's up-to-4 mailbox slots this link finalizes
 	ExpiresAt   time.Time `json:"expiresAt"`
 	UsedAt      time.Time `json:"usedAt,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`

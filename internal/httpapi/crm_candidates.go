@@ -6,10 +6,13 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"faangjobs/internal/crm"
 	"faangjobs/internal/gmail"
+	"faangjobs/internal/source"
+	"faangjobs/internal/store"
 )
 
 // CRMAPI exposes the candidate/vacancy CRM JSON endpoints under /api/crm/*.
@@ -18,19 +21,28 @@ type CRMAPI struct {
 	idx        *Index
 	gmail      *gmail.Client
 	classifier crm.Classifier
+	// jobStore/fetcher back the on-demand scrape endpoint (crm_scrape.go);
+	// both nil disables that route with a clear error.
+	jobStore *store.Store
+	fetcher  *source.Fetcher
 }
 
 // NewCRMAPI builds a CRM API handler set. idx may be nil until the vacancy
 // routes need it; gmailClient may be nil (or built from an empty
 // gmail.Config) until Gmail credentials are configured — every Gmail route
 // checks gmail.Enabled() itself and responds 503 rather than panicking.
-// Reply classification defaults to the dependency-free crm.KeywordClassifier;
-// swapping in an LLM-backed one later is a one-line change here.
-func NewCRMAPI(store *crm.Store, idx *Index, gmailClient *gmail.Client) *CRMAPI {
+// jobStore/fetcher may be nil (the on-demand scrape route responds 503
+// instead of panicking). Reply classification defaults to the
+// dependency-free crm.KeywordClassifier; swapping in an LLM-backed one later
+// is a one-line change here.
+func NewCRMAPI(crmStore *crm.Store, idx *Index, gmailClient *gmail.Client, jobStore *store.Store, fetcher *source.Fetcher) *CRMAPI {
 	if gmailClient == nil {
 		gmailClient = gmail.New(gmail.Config{})
 	}
-	return &CRMAPI{store: store, idx: idx, gmail: gmailClient, classifier: crm.KeywordClassifier{}}
+	return &CRMAPI{
+		store: crmStore, idx: idx, gmail: gmailClient, classifier: crm.KeywordClassifier{},
+		jobStore: jobStore, fetcher: fetcher,
+	}
 }
 
 // Register wires the CRM routes onto a mux.
@@ -62,6 +74,7 @@ func (a *CRMAPI) Register(mux *http.ServeMux) {
 	a.registerAnalyticsRoutes(mux)
 	a.registerGmailRoutes(mux)
 	a.registerReplyCheckRoutes(mux)
+	a.registerScrapeRoutes(mux)
 }
 
 // --- candidates ---
@@ -71,6 +84,15 @@ func (a *CRMAPI) listCandidates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if direction := r.URL.Query().Get("direction"); direction != "" {
+		filtered := items[:0:0]
+		for _, c := range items {
+			if c.Direction == direction {
+				filtered = append(filtered, c)
+			}
+		}
+		items = filtered
 	}
 	for i := range items {
 		items[i] = items[i].Redacted()
@@ -86,6 +108,7 @@ type candidateInput struct {
 	Citizenship    string `json:"citizenship"`
 	CurrentCountry string `json:"currentCountry"`
 	Notes          string `json:"notes"`
+	Direction      string `json:"direction"`
 }
 
 func (in candidateInput) apply(c crm.Candidate) crm.Candidate {
@@ -96,6 +119,7 @@ func (in candidateInput) apply(c crm.Candidate) crm.Candidate {
 	c.Citizenship = in.Citizenship
 	c.CurrentCountry = in.CurrentCountry
 	c.Notes = in.Notes
+	c.Direction = in.Direction
 	return c
 }
 
@@ -106,6 +130,10 @@ func (a *CRMAPI) createCandidate(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.FullName == "" {
 		writeError(w, http.StatusBadRequest, "fullName is required")
+		return
+	}
+	if !crm.IsDirection(in.Direction) {
+		writeError(w, http.StatusBadRequest, "direction must be one of: "+strings.Join(crm.Directions, ", "))
 		return
 	}
 	c, err := a.store.CreateCandidate(in.apply(crm.Candidate{}))

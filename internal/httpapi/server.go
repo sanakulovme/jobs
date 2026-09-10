@@ -11,6 +11,8 @@ import (
 
 	"faangjobs/internal/crm"
 	"faangjobs/internal/gmail"
+	"faangjobs/internal/source"
+	"faangjobs/internal/store"
 	"faangjobs/internal/webui"
 )
 
@@ -28,6 +30,13 @@ type Config struct {
 	// CRM is the candidate/vacancy CRM store (see internal/crm). Nil disables
 	// every /api/crm/* route.
 	CRM *crm.Store
+	// JobStore and Fetcher back the on-demand, candidate-scoped scrape
+	// endpoint (POST /api/crm/candidates/{id}/scrape, crm_scrape.go). Nil
+	// JobStore disables that route with a clear error rather than a panic —
+	// it's optional so tests/tools that only need the read-side Index don't
+	// have to construct a whole store.Store.
+	JobStore *store.Store
+	Fetcher  *source.Fetcher
 	// Gmail configures the candidate-Gmail-connect OAuth flow (see
 	// internal/gmail and crm_gmail.go). A zero value disables it — every
 	// Gmail route responds 503 rather than being unreachable, so the
@@ -46,7 +55,7 @@ func Handler(idx *Index, cfg Config) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	NewAPI(idx).Register(mux)
-	NewCRMAPI(cfg.CRM, idx, gmail.New(cfg.Gmail)).Register(mux)
+	NewCRMAPI(cfg.CRM, idx, gmail.New(cfg.Gmail), cfg.JobStore, cfg.Fetcher).Register(mux)
 	if cfg.Gmail.Enabled() {
 		log("Gmail integration enabled (redirect: %s)", cfg.Gmail.RedirectURL)
 	} else {

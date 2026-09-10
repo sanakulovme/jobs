@@ -13,11 +13,12 @@ func fullCandidate(id string, specialties ...string) Candidate {
 		ps[i] = ProfileSpecialty{Specialty: s}
 	}
 	return Candidate{
-		ID:                id,
-		FullName:          "Test " + id,
-		GermanLevel:       "B2",
-		GmailEmail:        id + "@gmail.com",
-		GmailRefreshToken: "refresh-" + id,
+		ID:          id,
+		FullName:    "Test " + id,
+		GermanLevel: "B2",
+		GmailMailboxes: []GmailMailbox{
+			{Slot: "1", Email: id + "@gmail.com", RefreshToken: "refresh-" + id, DailyCap: 50},
+		},
 		Profiles: []ApplicationProfile{
 			{ID: "p-" + id, CandidateID: id, CVDocumentID: "cv-" + id, Specialties: ps},
 		},

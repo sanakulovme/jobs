@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { crmApi } from './api'
-import type { Candidate, CandidateInput, Document, ProfileSpecialty } from './api'
+import { DIRECTIONS, DIRECTION_LABEL, DIRECTION_READY } from './api'
+import type { Candidate, CandidateInput, Direction, Document, GmailMailbox, ProfileSpecialty, ScrapeResult } from './api'
 
 const GERMAN_LEVELS = ['', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const DOC_TYPES = [
@@ -12,46 +13,110 @@ const DOC_TYPES = [
 ]
 const DOC_LANGUAGES = ['', 'Nemis', 'Ingliz', 'Rus', "O'zbek"]
 
+// CandidatesPage is the "Kandidatlar" section's entry point: a 4-direction
+// home screen first (MFA/ZFA is the only one with a working scraper today —
+// the other three show as "tez orada"), then a direction-filtered candidate
+// list, then a candidate's own detail/wizard page.
 export function CandidatesPage() {
-  const [candidates, setCandidates] = useState<Candidate[] | null>(null)
+  const [direction, setDirection] = useState<Direction | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [error, setError] = useState('')
-
-  function reload() {
-    crmApi
-      .candidates()
-      .then((r) => setCandidates(r.candidates))
-      .catch((e: Error) => setError(e.message))
-  }
-  useEffect(reload, [])
-
-  async function createCandidate() {
-    try {
-      const c = await crmApi.createCandidate({ fullName: 'Yangi kandidat' })
-      setCandidates((prev) => [...(prev ?? []), c])
-      setSelectedId(c.id)
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }
 
   if (selectedId) {
     return (
       <CandidateDetail
         id={selectedId}
-        onBack={() => {
-          setSelectedId(null)
-          reload()
-        }}
+        onBack={() => setSelectedId(null)}
       />
     )
   }
+  if (direction) {
+    return (
+      <CandidateList
+        direction={direction}
+        onBack={() => setDirection(null)}
+        onOpen={setSelectedId}
+      />
+    )
+  }
+  return <DirectionHome onPick={setDirection} />
+}
+
+function DirectionHome({ onPick }: { onPick: (d: Direction) => void }) {
+  const [counts, setCounts] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    crmApi.candidates().then((r) => {
+      const next: Record<string, number> = {}
+      for (const c of r.candidates) next[c.direction] = (next[c.direction] ?? 0) + 1
+      setCounts(next)
+    }).catch(() => {})
+  }, [])
 
   return (
     <div className="crm-page">
       <div className="crm-header">
+        <div>
+          <div className="crm-title">Yo'nalishlar</div>
+          <div className="crm-subtitle">Kandidat qaysi yo'nalishda bo'lsa, o'sha bo'limga kiring.</div>
+        </div>
+      </div>
+      <div className="crm-direction-grid">
+        {DIRECTIONS.map((d) => {
+          const ready = DIRECTION_READY[d]
+          return (
+            <button
+              key={d}
+              className={'crm-direction-tile' + (ready ? '' : ' soon')}
+              onClick={() => ready && onPick(d)}
+              disabled={!ready}
+            >
+              <div className="crm-direction-name">{DIRECTION_LABEL[d]}</div>
+              <div className="crm-direction-count">{ready ? `${counts[d] ?? 0} kandidat` : 'Tez orada'}</div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function CandidateList({
+  direction,
+  onBack,
+  onOpen,
+}: {
+  direction: Direction
+  onBack: () => void
+  onOpen: (id: string) => void
+}) {
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null)
+  const [error, setError] = useState('')
+
+  function reload() {
+    crmApi
+      .candidates({ direction })
+      .then((r) => setCandidates(r.candidates))
+      .catch((e: Error) => setError(e.message))
+  }
+  useEffect(reload, [direction])
+
+  async function createCandidate() {
+    try {
+      const c = await crmApi.createCandidate({ fullName: 'Yangi kandidat', direction })
+      setCandidates((prev) => [...(prev ?? []), c])
+      onOpen(c.id)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  return (
+    <div className="crm-page">
+      <button className="btn-quiet" onClick={onBack} style={{ marginBottom: 10 }}>← Yo'nalishlar</button>
+
+      <div className="crm-header">
         <div style={{ flex: 1 }}>
-          <div className="crm-title">Kandidatlar</div>
+          <div className="crm-title">{DIRECTION_LABEL[direction]} kandidatlari</div>
           <div className="crm-subtitle">Profil, hujjatlar va Gmail ulanishini bir joyda boshqaring.</div>
         </div>
         <button className="btn-primary" onClick={createCandidate}>+ Yangi kandidat</button>
@@ -66,7 +131,7 @@ export function CandidatesPage() {
 
       <div className="crm-list">
         {candidates?.map((c) => (
-          <div key={c.id} className="crm-item" onClick={() => setSelectedId(c.id)}>
+          <div key={c.id} className="crm-item" onClick={() => onOpen(c.id)}>
             <div className="crm-item-main">
               <div className="crm-item-title">{c.fullName}</div>
               <div className="crm-item-sub">{c.contactEmail || 'email kiritilmagan'}</div>
@@ -81,7 +146,7 @@ export function CandidatesPage() {
 
 // --- detail: 3-step wizard --------------------------------------------
 
-type Step = 'basic' | 'gmail' | 'profile'
+type Step = 'basic' | 'gmail' | 'profile' | 'scrape'
 
 function CandidateDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [candidate, setCandidate] = useState<Candidate | null>(null)
@@ -126,11 +191,18 @@ function CandidateDetail({ id, onBack }: { id: string; onBack: () => void }) {
           <span className="crm-step-num">{profileDone ? '✓' : '3'}</span>
           Ariza profili
         </button>
+        {DIRECTION_READY[candidate.direction] && (
+          <button className={'crm-step' + (step === 'scrape' ? ' active' : '')} onClick={() => setStep('scrape')}>
+            <span className="crm-step-num">4</span>
+            Scrape va yuborish
+          </button>
+        )}
       </div>
 
       {step === 'basic' && <BasicInfoStep candidate={candidate} onSaved={setCandidate} />}
       {step === 'gmail' && <GmailStep candidate={candidate} onChanged={reload} />}
       {step === 'profile' && <ProfileStep candidate={candidate} onChanged={reload} />}
+      {step === 'scrape' && <ScrapeStep candidate={candidate} />}
     </div>
   )
 }
@@ -146,6 +218,7 @@ function BasicInfoStep({ candidate, onSaved }: { candidate: Candidate; onSaved: 
     citizenship: candidate.citizenship ?? '',
     currentCountry: candidate.currentCountry ?? '',
     notes: candidate.notes ?? '',
+    direction: candidate.direction,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -170,6 +243,12 @@ function BasicInfoStep({ candidate, onSaved }: { candidate: Candidate; onSaved: 
       <div className="crm-field">
         <label className="crm-field-label">To'liq ismi *</label>
         <input className="crm-input" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+      </div>
+      <div className="crm-field">
+        <label className="crm-field-label">Yo'nalish *</label>
+        <select className="crm-select" value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value as CandidateInput['direction'] })}>
+          {DIRECTIONS.map((d) => <option key={d} value={d}>{DIRECTION_LABEL[d]}</option>)}
+        </select>
       </div>
       <div className="crm-row">
         <div className="crm-field">
@@ -217,20 +296,60 @@ function BasicInfoStep({ candidate, onSaved }: { candidate: Candidate; onSaved: 
 // own Google login), not the admin's — so instead of a direct "Connect"
 // button, the admin generates a one-time shareable link here and sends it to
 // the candidate outside the CRM (Telegram, WhatsApp, ...). The candidate's
-// own click drives the OAuth consent screen.
+// own click drives the OAuth consent screen. A candidate can connect up to
+// 4 mailboxes — sending rotates across whichever ones still have room under
+// their own daily cap, so one mailbox hitting its limit doesn't stall
+// applications.
+
+const MAILBOX_SLOTS = ['1', '2', '3', '4']
 
 function GmailStep({ candidate, onChanged }: { candidate: Candidate; onChanged: () => void }) {
-  const connected = !!candidate.gmailEmail
+  return (
+    <div className="crm-card">
+      <div className="crm-card-title">Gmail hisoblari</div>
+      <div className="crm-card-desc">
+        Kandidat bir nechta Gmail hisobini ulashi mumkin (4 tagacha) — arizalar shulardan navbat bilan yuboriladi;
+        bittasi kunlik limitga yetsa, tizim avtomatik keyingisiga o'tadi.
+      </div>
+      <div className="crm-mailbox-grid">
+        {MAILBOX_SLOTS.map((slot) => (
+          <MailboxCard
+            key={slot}
+            candidateId={candidate.id}
+            slot={slot}
+            mailbox={candidate.gmailMailboxes?.find((m) => m.slot === slot)}
+            onChanged={onChanged}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MailboxCard({
+  candidateId,
+  slot,
+  mailbox,
+  onChanged,
+}: {
+  candidateId: string
+  slot: string
+  mailbox?: GmailMailbox
+  onChanged: () => void
+}) {
+  const connected = !!mailbox?.email
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null)
   const [error, setError] = useState('')
   const [generating, setGenerating] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [cap, setCap] = useState(mailbox?.dailyCap || 30)
+  const [savingCap, setSavingCap] = useState(false)
 
   async function generateLink() {
     setGenerating(true)
     setError('')
     try {
-      setLink(await crmApi.createGmailConnectLink(candidate.id))
+      setLink(await crmApi.createGmailConnectLink(candidateId, slot))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -241,7 +360,7 @@ function GmailStep({ candidate, onChanged }: { candidate: Candidate; onChanged: 
   async function disconnect() {
     setDisconnecting(true)
     try {
-      await crmApi.disconnectGmail(candidate.id)
+      await crmApi.disconnectGmail(candidateId, slot)
       onChanged()
     } catch (e) {
       setError((e as Error).message)
@@ -250,42 +369,173 @@ function GmailStep({ candidate, onChanged }: { candidate: Candidate; onChanged: 
     }
   }
 
-  return (
-    <div className="crm-card">
-      <div className="crm-card-title">Gmail ulanishi</div>
-      <div className="crm-card-desc">Kandidat o'z Gmail hisobini ulasin — arizalar shu manzildan yuboriladi.</div>
+  async function saveCap() {
+    setSavingCap(true)
+    setError('')
+    try {
+      await crmApi.setMailboxCap(candidateId, slot, cap)
+      onChanged()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSavingCap(false)
+    }
+  }
 
-      <div className={'crm-conn' + (connected ? '' : ' off')}>
-        <span>{connected ? candidate.gmailEmail : 'Ulanmagan'}</span>
-        <span>{connected ? 'Ulangan' : 'Hali ulanmagan'}</span>
+  return (
+    <div className={'crm-mailbox' + (connected ? '' : ' off')}>
+      <div className="crm-mailbox-head">
+        <span className="crm-mailbox-slot">#{slot}</span>
+        <span className="crm-mailbox-email">{connected ? mailbox!.email : 'Ulanmagan'}</span>
       </div>
 
       {connected ? (
-        <div className="crm-actions">
-          <button className="btn-quiet crm-danger" disabled={disconnecting} onClick={disconnect}>
-            {disconnecting ? 'Uzilmoqda…' : 'Uzish'}
-          </button>
-        </div>
+        <>
+          <div className="crm-item-sub">Bugun yuborildi: {mailbox!.sentToday} / {mailbox!.dailyCap || 250}</div>
+          <div className="crm-row" style={{ marginTop: 8 }}>
+            <div className="crm-field" style={{ maxWidth: 100 }}>
+              <label className="crm-field-label">Kunlik limit</label>
+              <input
+                className="crm-input"
+                type="number"
+                min={1}
+                max={250}
+                value={cap}
+                onChange={(e) => setCap(Number(e.target.value) || 1)}
+              />
+            </div>
+            <button className="btn-quiet" disabled={savingCap} onClick={saveCap} style={{ alignSelf: 'flex-end', marginBottom: 2 }}>
+              {savingCap ? 'Saqlanmoqda…' : 'Saqlash'}
+            </button>
+          </div>
+          <div className="crm-actions">
+            <button className="btn-quiet crm-danger" disabled={disconnecting} onClick={disconnect}>
+              {disconnecting ? 'Uzilmoqda…' : 'Uzish'}
+            </button>
+          </div>
+        </>
       ) : (
         <>
           <div className="crm-actions">
-            <button className="btn-primary" disabled={generating} onClick={generateLink}>
+            <button className="btn-quiet" disabled={generating} onClick={generateLink}>
               {generating ? 'Yaratilmoqda…' : 'Ulash havolasini yaratish'}
             </button>
           </div>
           {link && (
-            <div className="crm-vac-detail" style={{ marginTop: 10 }}>
+            <div className="crm-vac-detail" style={{ marginTop: 8 }}>
               <div className="crm-item-sub">
-                Bu havolani kandidatga yuboring (Telegram, WhatsApp va h.k.) — u o'zi bosib, o'z Gmail hisobini ulaydi.
-                Havola {new Date(link.expiresAt).toLocaleString()} gacha amal qiladi.
+                Havolani kandidatga yuboring (Telegram, WhatsApp va h.k.). {new Date(link.expiresAt).toLocaleString()} gacha amal qiladi.
               </div>
-              <input className="crm-input" readOnly value={link.url} onFocus={(e) => e.target.select()} style={{ marginTop: 8 }} />
+              <input className="crm-input" readOnly value={link.url} onFocus={(e) => e.target.select()} style={{ marginTop: 6 }} />
             </div>
           )}
         </>
       )}
 
       {error && <div className="state" style={{ padding: '6px 0' }}>{error}</div>}
+    </div>
+  )
+}
+
+// --- step 4 ----------------------------------------------------------------
+// Shown only for directions with a working scraper (DIRECTION_READY).
+// Fetches fresh vacancies scoped to one city, merges them into that
+// direction's shared on-demand pool,
+// then immediately runs auto-apply scoped to just this candidate. Real
+// sending requires two deliberate checks (arm + confirm) — never just one
+// checkbox — so a misclick can't email a real employer.
+
+function ScrapeStep({ candidate }: { candidate: Candidate }) {
+  const [city, setCity] = useState('')
+  const [radiusKm, setRadiusKm] = useState(50)
+  const [onlyNew, setOnlyNew] = useState(true)
+  const [realSend, setRealSend] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<ScrapeResult | null>(null)
+  const [error, setError] = useState('')
+
+  const armed = realSend && confirmed
+  const testMode = !armed
+
+  function setRealSendChecked(v: boolean) {
+    setRealSend(v)
+    if (!v) setConfirmed(false) // unchecking "real send" always disarms confirmation too
+  }
+
+  async function run() {
+    if (!city.trim()) {
+      setError('Shahar nomini kiriting')
+      return
+    }
+    setRunning(true)
+    setError('')
+    setResult(null)
+    try {
+      setResult(await crmApi.scrapeCandidate(candidate.id, { city, radiusKm, onlyNew, testMode }))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="crm-card">
+      <div className="crm-card-title">Scrape va ariza yuborish</div>
+      <div className="crm-card-desc">
+        Kandidat uchun tanlangan shahardan yangi vakansiyalarni qidiradi, so'ng ularni shu kandidat bilan
+        solishtirib, mos kelganlariga ariza tayyorlaydi.
+      </div>
+
+      <div className="crm-row">
+        <div className="crm-field">
+          <label className="crm-field-label">Shahar (yoki hudud)</label>
+          <input className="crm-input" placeholder="Masalan, Berlin" value={city} onChange={(e) => setCity(e.target.value)} />
+        </div>
+        <div className="crm-field" style={{ maxWidth: 120 }}>
+          <label className="crm-field-label">Radius (km)</label>
+          <input className="crm-input" type="number" min={1} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value) || 50)} />
+        </div>
+      </div>
+
+      <label className="crm-item-sub" style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 }}>
+        <input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} />
+        Faqat yangi ishlar (avval topilgan ishlarga qayta ariza yubormaslik)
+      </label>
+
+      <div className="crm-realsend-box">
+        <label className="crm-item-sub" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="checkbox" checked={realSend} onChange={(e) => setRealSendChecked(e.target.checked)} />
+          Sinov rejimini o'chirish — <strong>HAQIQIY</strong> xat ish beruvchiga yuboriladi
+        </label>
+        {realSend && (
+          <label className="crm-item-sub crm-danger" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+            Men tushunaman — bu ish beruvchilarga haqiqiy email yuboradi, orqaga qaytarib bo'lmaydi
+          </label>
+        )}
+      </div>
+
+      <div className="crm-actions">
+        <button className={armed ? 'btn-primary crm-danger-btn' : 'btn-primary'} disabled={running} onClick={run}>
+          {running ? 'Ishlamoqda…' : armed ? 'Scrape va HAQIQIY ariza yubor' : 'Scrape va ariza yubor (sinov)'}
+        </button>
+      </div>
+
+      {error && <div className="state" style={{ padding: '6px 0' }}>{error}</div>}
+      {result && (
+        <div className="crm-vac-detail" style={{ marginTop: 12 }}>
+          <div className="crm-item-sub">
+            {result.dryRun ? 'Sinov rejimi' : 'HAQIQIY yuborildi'} · Topildi: {result.foundJobs} · Yangi: {result.newJobs} ·
+            Ko'rib chiqildi: {result.stats.considered} · Yuborilardi: {result.stats.sent} ·
+            O'tkazib yuborildi: {result.stats.skipped} · Xato: {result.stats.failed}
+          </div>
+          {result.stats.details.length > 0 && (
+            <div className="crm-vac-text" style={{ marginTop: 8 }}>{result.stats.details.join('\n')}</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -29,6 +29,35 @@ export type ApplicationProfile = {
   updatedAt: string
 }
 
+// Direction is the one recruiting vertical a candidate belongs to. 'mfa_zfa'
+// and 'ausbildung' have a working scraper (both via Bundesagentur, just a
+// different search term — see internal/httpapi/crm_scrape.go's
+// directionScrapeConfigs); 'til_kursi' and 'au_pair' are shown in the UI as
+// "tez orada" (coming soon) until a source site is chosen for them.
+export type Direction = 'mfa_zfa' | 'ausbildung' | 'til_kursi' | 'au_pair'
+export const DIRECTIONS: Direction[] = ['mfa_zfa', 'ausbildung', 'til_kursi', 'au_pair']
+export const DIRECTION_LABEL: Record<Direction, string> = {
+  mfa_zfa: 'MFA/ZFA',
+  ausbildung: 'Ausbildung',
+  til_kursi: 'Til kursi',
+  au_pair: 'Au pair',
+}
+export const DIRECTION_READY: Record<Direction, boolean> = {
+  mfa_zfa: true,
+  ausbildung: true,
+  til_kursi: false,
+  au_pair: false,
+}
+
+export type GmailMailbox = {
+  slot: string
+  email?: string
+  connectedAt?: string
+  dailyCap: number
+  sentToday: number
+  sentTodayDate?: string
+}
+
 export type Candidate = {
   id: string
   fullName: string
@@ -38,8 +67,8 @@ export type Candidate = {
   citizenship?: string
   currentCountry?: string
   notes?: string
-  gmailEmail?: string
-  gmailConnectedAt?: string
+  direction: Direction
+  gmailMailboxes?: GmailMailbox[]
   documents?: Document[]
   profiles?: ApplicationProfile[]
   createdAt: string
@@ -143,6 +172,16 @@ export type CandidateInput = {
   citizenship?: string
   currentCountry?: string
   notes?: string
+  direction: Direction
+}
+
+export type ScrapeResult = {
+  foundJobs: number
+  newJobs: number
+  runId: string
+  stats: { considered: number; sent: number; skipped: number; failed: number; noEmail: number; details: string[] }
+  drafts: Application[]
+  dryRun: boolean
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -190,8 +229,11 @@ export const crmApi = {
   specialties: (signal?: AbortSignal) =>
     getJSON<{ specialties: string[] }>('/api/crm/specialties', signal).then((r) => r.specialties),
 
-  candidates: (signal?: AbortSignal) =>
-    getJSON<{ candidates: Candidate[]; total: number }>('/api/crm/candidates', signal),
+  candidates: (params: { direction?: Direction } = {}, signal?: AbortSignal) => {
+    const p = new URLSearchParams()
+    if (params.direction) p.set('direction', params.direction)
+    return getJSON<{ candidates: Candidate[]; total: number }>('/api/crm/candidates?' + p.toString(), signal)
+  },
   candidate: (id: string, signal?: AbortSignal) =>
     getJSON<Candidate>(`/api/crm/candidates/${encodeURIComponent(id)}`, signal),
   createCandidate: (input: CandidateInput) => postJSON<Candidate>('/api/crm/candidates', input),
@@ -230,13 +272,26 @@ export const crmApi = {
   deleteProfile: (candidateId: string, profileId: string) =>
     del(`/api/crm/candidates/${encodeURIComponent(candidateId)}/profiles/${encodeURIComponent(profileId)}`),
 
-  createGmailConnectLink: (candidateId: string) =>
+  createGmailConnectLink: (candidateId: string, slot: string) =>
     postJSON<{ url: string; expiresAt: string }>(
-      `/api/crm/candidates/${encodeURIComponent(candidateId)}/gmail/connect-link`,
+      `/api/crm/candidates/${encodeURIComponent(candidateId)}/gmail/${encodeURIComponent(slot)}/connect-link`,
       {},
     ),
-  disconnectGmail: (candidateId: string) =>
-    postJSON<Candidate>(`/api/crm/candidates/${encodeURIComponent(candidateId)}/gmail/disconnect`, {}),
+  disconnectGmail: (candidateId: string, slot: string) =>
+    postJSON<Candidate>(
+      `/api/crm/candidates/${encodeURIComponent(candidateId)}/gmail/${encodeURIComponent(slot)}/disconnect`,
+      {},
+    ),
+  setMailboxCap: (candidateId: string, slot: string, dailyCap: number) =>
+    patchJSON<Candidate>(
+      `/api/crm/candidates/${encodeURIComponent(candidateId)}/gmail/${encodeURIComponent(slot)}`,
+      { dailyCap },
+    ),
+
+  scrapeCandidate: (
+    candidateId: string,
+    input: { city: string; radiusKm?: number; onlyNew: boolean; count?: number; testMode: boolean },
+  ) => postJSON<ScrapeResult>(`/api/crm/candidates/${encodeURIComponent(candidateId)}/scrape`, input),
 
   vacancies: (params: { q?: string; specialty?: string; page?: number; pageSize?: number } = {}, signal?: AbortSignal) => {
     const p = new URLSearchParams()

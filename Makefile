@@ -18,9 +18,8 @@ sync-data: ## Sync ./data into the server's embedded snapshot (FULL=1 keeps desc
 
 .PHONY: binaries
 binaries: sync-data ## Build all Go binaries into ./bin (server embeds frontend + data snapshot)
-	go build -o bin/crawler   ./cmd/crawler
-	go build -o bin/server    ./cmd/server
-	go build -o bin/autoapply ./cmd/autoapply
+	go build -o bin/crawler ./cmd/crawler
+	go build -o bin/server  ./cmd/server
 
 .PHONY: build
 build: web binaries ## Build frontend + both binaries
@@ -36,10 +35,6 @@ crawl-fast: ## Crawl only a small subset (greenhouse+ashby+amazon) for a quick d
 .PHONY: server
 server: ## Run the web server (reads $(DATA))
 	go run ./cmd/server -data $(DATA) -addr $(ADDR)
-
-.PHONY: autoapply
-autoapply: ## Run one auto-apply pass over $(DATA) in test mode (dry run, no emails sent)
-	go run ./cmd/autoapply -data $(DATA)
 
 .PHONY: dev-web
 dev-web: ## Run the Vite dev server (proxies /api to :8080)

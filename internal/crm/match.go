@@ -66,7 +66,7 @@ func MatchVacancy(candidates []Candidate, applications []Application, job model.
 
 		candidateLevel, hasCandidateLevel := germanLevelIndex(c.GermanLevel)
 		germanOK := !hasRequiredLevel || (hasCandidateLevel && candidateLevel >= requiredLevel)
-		gmailReady := c.GmailConnected()
+		gmailReady := c.HasCapacity()
 
 		score := best.score +
 			boolScore(germanOK, scoreGermanOK) +

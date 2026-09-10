@@ -88,18 +88,44 @@
 .crm-chip:hover { border-color: var(--blue); }
 .crm-chip.on { background: var(--blue-tag-bg); color: var(--blue-tag-text); border-color: transparent; font-weight: 500; }
 
-/* ── connection status pill (Gmail) ────────────────────────────────── */
-.crm-conn {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; border-radius: 8px;
-  background: var(--green-tag-bg); color: var(--green-tag-text);
+/* ── Gmail mailbox slot cards ──────────────────────────────────────── */
+.crm-mailbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.crm-mailbox {
+  border: 1px solid var(--divider-strong); border-radius: 8px; padding: 12px;
+  background: var(--green-tag-bg);
 }
-.crm-conn.off { background: var(--tag); color: var(--text-2); }
+.crm-mailbox.off { background: var(--tag); }
+.crm-mailbox-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.crm-mailbox-slot {
+  width: 20px; height: 20px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: 11px; font-weight: 600;
+  background: var(--bg); color: var(--text-2);
+}
+.crm-mailbox-email { font-weight: 500; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── direction home tiles ──────────────────────────────────────────── */
+.crm-direction-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 8px; }
+.crm-direction-tile {
+  border: 1px solid var(--divider); border-radius: 10px; padding: 20px 16px;
+  background: var(--bg); text-align: left;
+}
+.crm-direction-tile:not(:disabled):hover { border-color: var(--blue); background: var(--hover); }
+.crm-direction-tile.soon { opacity: 0.55; cursor: default; }
+.crm-direction-name { font-weight: 600; font-size: 15.5px; }
+.crm-direction-count { color: var(--text-3); font-size: 12.5px; margin-top: 4px; }
 
 .crm-empty { color: var(--text-3); font-size: 13.5px; padding: 30px 0; text-align: center; }
 
 .crm-danger { color: var(--red); }
 .crm-danger:hover { text-decoration: underline; }
+
+/* ── real-send arm/confirm box (scrape step) ──────────────────────── */
+.crm-realsend-box {
+  border: 1px solid var(--divider-strong); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 12px;
+}
+.crm-danger-btn { background: var(--red); }
+.crm-danger-btn:hover { filter: brightness(1.06); }
 
 /* ── vacancy rows ──────────────────────────────────────────────────── */
 .crm-vac-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }

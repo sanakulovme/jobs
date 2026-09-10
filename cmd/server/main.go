@@ -20,6 +20,7 @@ import (
 	"faangjobs/internal/dataset"
 	"faangjobs/internal/gmail"
 	"faangjobs/internal/httpapi"
+	"faangjobs/internal/source"
 	"faangjobs/internal/store"
 )
 
@@ -148,6 +149,14 @@ func main() {
 
 	idx := httpapi.NewIndex(st, logger.Printf)
 
+	// Shared HTTP fetcher for on-demand, candidate-scoped scrapes triggered
+	// from the CRM (see crm_scrape.go) — separate from the standalone
+	// cmd/crawler binary's own fetcher, but built the same way. Writing new
+	// company data only works against a live -data dir; against -embedded
+	// (fsys-backed, read-only) store.WriteCompany already fails cleanly with
+	// its own read-only error, so no extra guard is needed here.
+	fetcher := source.NewFetcher(source.FetcherOptions{Log: func(f string, a ...any) { logger.Printf("http: "+f, a...) }})
+
 	// Hot reload only makes sense for the mutable on-disk folder.
 	stopReload := make(chan struct{})
 	if !useEmbedded {
@@ -161,6 +170,8 @@ func main() {
 		LoginURL:  *loginURL,
 		EnrollURL: *enrollURL,
 		CRM:       crmStore,
+		JobStore:  st,
+		Fetcher:   fetcher,
 		Gmail: gmail.Config{
 			ClientID:     *googleClientID,
 			ClientSecret: *googleClientSecret,

@@ -203,51 +203,30 @@ APIs). `GET /api/me` reports the signed-in user. Health endpoints stay open.
 -enroll-url  / FAANGJOBS_ENROLL_URL   non-enrollee redirect (default https://42.uz/course/devops)
 ```
 
-### Scheduling
+### Candidate-scoped scraping (no daily cron)
 
-The registry is currently scoped to MFA/Germany only (`internal/registry/companies.json`),
-and the crawler's default `-jobs` filter keeps developer/IT roles — so a scheduled
-crawl **must** pass `-jobs all`, or it silently saves zero jobs. `scripts/daily-crawl.sh`
-wraps this (`./bin/crawler -data ./data -jobs all`, logs to `./logs/`, prunes logs
-older than 30 days), then chains one auto-apply pass via `./bin/autoapply` (see
-below) so freshly-scraped vacancies get matched against candidates the same day.
-Wire it up once the production server is provisioned, e.g. a crontab entry for
-09:00 Europe/Berlin time daily:
+There is no global nightly crawl. Scraping is triggered per candidate from
+the CRM: open a candidate (must be in the `mfa_zfa` direction — the only one
+with a working source today), pick a city/radius and whether to consider only
+genuinely new postings, and hit "Scrape". That one action:
 
-```cron
-CRON_TZ=Europe/Berlin
-0 9 * * * /path/to/faang-board/scripts/daily-crawl.sh
-```
+1. Fetches fresh MFA/ZFA vacancies from Bundesagentur scoped to that city
+   (`POST /api/crm/candidates/{id}/scrape`, `internal/httpapi/crm_scrape.go`).
+2. Merges them into a single shared on-demand pool (`data/companies/bundesagentur-mfa-ondemand.json`)
+   deduped by `Job.ID` — the same posting found again via a different
+   city/candidate never double-counts, and the board/CRM see it immediately
+   (no polling delay).
+3. Immediately runs auto-apply scoped to just that candidate and just the
+   jobs this scrape turned up (`crm.RunAutoApply`, the same matching/scoring
+   logic behind the whole CRM) — in **test mode by default**, exactly like
+   `/api/crm/run`'s "Hozir boshlash" button; a real send is still a separate,
+   explicit choice each time.
 
-(`CRON_TZ` per-line is supported by Debian/Ubuntu's cron; if unavailable, set the
-line's hour to 09:00 in the server's own local timezone instead, or use a systemd
-timer with `OnCalendar=*-*-*  09:00:00 Europe/Berlin`.)
-
-The server picks up the new data automatically — no restart needed.
-
-#### `autoapply`
-
-`cmd/autoapply` runs one auto-apply pass (the same matching/sending logic behind
-the CRM's `/api/crm/run` endpoint and its "Hozir boshlash" button) without going
-through HTTP or the site's 42.uz login — meant for exactly this kind of scheduled
-chaining, where there's no browser session to authenticate.
-
-```
--data                string   directory the crawler writes vacancies into (default ./data)
--crm-data             string   CRM data directory (default: -data)
--count                int      max vacancies to consider this run (0 = server's default cap)
--test-mode            bool     dry run, no Gmail sends (default true — SAFE)
--i-understand-this-sends-real-emails
-                       bool     required in addition to -test-mode=false before anything is sent
--google-client-id / -google-client-secret / -google-redirect-url   same as the server's, or read from .env
-```
-
-`-test-mode` defaults to `true`, and flipping it to `false` alone still refuses to
-run — `-i-understand-this-sends-real-emails` must also be set, on purpose, since
-this is the only command in the repo that can email real employers unattended.
-`scripts/daily-crawl.sh` always runs it in test mode; switching a production
-schedule to real sends is a deliberate, one-time decision to make outside of
-this script, not a flag to flip lightly.
+The registry (`internal/registry/companies.json`) is still scoped to
+MFA/Germany, and standalone `./bin/crawler` still works exactly as before
+(useful for bulk/manual re-scrapes or seeding a fresh `./data` dir) — just
+remember its `-jobs` filter defaults to developer/IT roles, so pass
+`-jobs all` or it silently saves zero MFA jobs.
 
 ---
 
@@ -276,7 +255,7 @@ Point an A record (e.g. `crm.yourdomain.com`) at the VPS before continuing.
 sudo mkdir -p /opt/faangjobs && sudo chown $USER /opt/faangjobs
 git clone https://github.com/sanakulovme/jobs.git /opt/faangjobs
 cd /opt/faangjobs
-make binaries   # -> bin/crawler, bin/server, bin/autoapply
+make binaries   # -> bin/crawler, bin/server
 ```
 
 ### 3. Configure secrets
@@ -359,33 +338,16 @@ sudo systemctl reload caddy
 (nginx + certbot works too if Caddy isn't available — same idea: TLS
 terminates at the proxy, proxies plain HTTP to `127.0.0.1:8080`.)
 
-### 7. Schedule the daily crawl + auto-apply
-
-Already built and ready — see [Scheduling](#scheduling) above:
-
-```bash
-crontab -e
-```
-
-```cron
-CRON_TZ=Europe/Berlin
-0 9 * * * /opt/faangjobs/scripts/daily-crawl.sh
-```
-
-This runs `-jobs all` (mandatory) and chains `./bin/autoapply` **in test mode
-only** — verify this is still the case in `scripts/daily-crawl.sh` before
-relying on the schedule; switching to real sends is a separate, deliberate
-decision (see the `autoapply` section above), never something to do as part
-of routine deployment.
-
-### 8. Verify
+### 7. Verify
 
 ```bash
 curl -s https://crm.yourdomain.com/healthz
 ```
 
 Then in a browser: the job board at `https://crm.yourdomain.com/`, the CRM at
-`/crm`, and — only once ready to test it live — a Gmail connect link from a
+`/crm`, a candidate's "Scrape" action against a real city (see
+[Candidate-scoped scraping](#candidate-scoped-scraping-no-daily-cron) above),
+and — only once ready to test it live — a Gmail connect link from a
 candidate's profile, confirming the OAuth round trip lands back on the new
 domain correctly.
 

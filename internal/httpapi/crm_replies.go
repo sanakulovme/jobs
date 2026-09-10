@@ -112,14 +112,15 @@ func (a *CRMAPI) checkApplicationReplies(ctx context.Context, app crm.Applicatio
 	if err != nil {
 		return err
 	}
-	if !candidate.GmailConnected() {
-		return fmt.Errorf("candidate %s has no Gmail connection", candidate.ID)
+	mailbox, ok := mailboxByEmail(candidate, app.FromEmail)
+	if !ok {
+		return fmt.Errorf("mailbox %q that sent application %s is no longer connected", app.FromEmail, app.ID)
 	}
-	accessToken, err := a.validAccessToken(ctx, candidate)
+	accessToken, err := a.validAccessToken(ctx, candidate, mailbox)
 	if err != nil {
 		return err
 	}
-	messages, err := a.gmail.Replies(ctx, gmail.Token{AccessToken: accessToken}, candidate.GmailEmail, app.GmailThreadID)
+	messages, err := a.gmail.Replies(ctx, gmail.Token{AccessToken: accessToken}, mailbox.Email, app.GmailThreadID)
 	if err != nil {
 		return err
 	}
@@ -162,6 +163,18 @@ func (a *CRMAPI) checkApplicationReplies(ctx context.Context, app crm.Applicatio
 		}
 	}
 	return nil
+}
+
+// mailboxByEmail finds the candidate mailbox that sent from the given
+// address, so a reply-check on an already-sent Application polls the exact
+// mailbox that sent it (Application.FromEmail snapshots this at send time).
+func mailboxByEmail(candidate crm.Candidate, email string) (crm.GmailMailbox, bool) {
+	for _, m := range candidate.GmailMailboxes {
+		if m.Email == email {
+			return m, true
+		}
+	}
+	return crm.GmailMailbox{}, false
 }
 
 func truncateRunes(s string, max int) string {

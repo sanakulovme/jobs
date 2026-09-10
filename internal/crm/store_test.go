@@ -3,6 +3,7 @@ package crm
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -161,6 +162,99 @@ func TestConcurrentCandidateWrites(t *testing.T) {
 			t.Fatalf("duplicate id %q", c.ID)
 		}
 		seen[c.ID] = true
+	}
+}
+
+func TestMailboxSetClearAndCap(t *testing.T) {
+	s := newTestStore(t)
+	c, err := s.CreateCandidate(Candidate{FullName: "Test", Direction: DirectionMFAZFA})
+	if err != nil {
+		t.Fatalf("CreateCandidate: %v", err)
+	}
+
+	got, err := s.SetCandidateMailbox(c.ID, "1", "a@gmail.com", "at-1", "rt-1", "scope", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("SetCandidateMailbox: %v", err)
+	}
+	if len(got.GmailMailboxes) != 1 || got.GmailMailboxes[0].Email != "a@gmail.com" {
+		t.Fatalf("GmailMailboxes = %+v", got.GmailMailboxes)
+	}
+
+	// Reconnecting the same slot overwrites in place rather than appending.
+	got, err = s.SetCandidateMailbox(c.ID, "1", "a2@gmail.com", "at-2", "rt-2", "scope", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("SetCandidateMailbox (reconnect): %v", err)
+	}
+	if len(got.GmailMailboxes) != 1 || got.GmailMailboxes[0].Email != "a2@gmail.com" {
+		t.Fatalf("expected slot 1 overwritten in place, got %+v", got.GmailMailboxes)
+	}
+
+	// A 5th distinct slot must be rejected once 4 are connected.
+	for _, slot := range []string{"2", "3", "4"} {
+		if _, err := s.SetCandidateMailbox(c.ID, slot, slot+"@gmail.com", "at", "rt", "scope", time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("SetCandidateMailbox slot %s: %v", slot, err)
+		}
+	}
+	if _, err := s.SetCandidateMailbox(c.ID, "5", "e@gmail.com", "at", "rt", "scope", time.Now().Add(time.Hour)); err != errTooManyMailboxes {
+		t.Errorf("expected errTooManyMailboxes for a 5th slot, got %v", err)
+	}
+
+	if _, err := s.SetMailboxDailyCap(c.ID, "1", 999); err != nil {
+		t.Fatalf("SetMailboxDailyCap: %v", err)
+	}
+	got, _ = s.GetCandidate(c.ID)
+	mb, ok := got.Mailbox("1")
+	if !ok || mb.DailyCap != MaxDailyCapPerMailbox {
+		t.Errorf("DailyCap = %d, want clamped to %d", mb.DailyCap, MaxDailyCapPerMailbox)
+	}
+
+	got, err = s.ClearCandidateMailbox(c.ID, "1")
+	if err != nil {
+		t.Fatalf("ClearCandidateMailbox: %v", err)
+	}
+	if len(got.GmailMailboxes) != 3 {
+		t.Fatalf("expected 3 mailboxes left after clearing slot 1, got %d", len(got.GmailMailboxes))
+	}
+	if _, ok := got.Mailbox("1"); ok {
+		t.Error("slot 1 should be gone after ClearCandidateMailbox")
+	}
+}
+
+func TestIncrementMailboxSentRollsOverByDate(t *testing.T) {
+	s := newTestStore(t)
+	c, err := s.CreateCandidate(Candidate{FullName: "Test", Direction: DirectionMFAZFA})
+	if err != nil {
+		t.Fatalf("CreateCandidate: %v", err)
+	}
+	if _, err := s.SetCandidateMailbox(c.ID, "1", "a@gmail.com", "at", "rt", "scope", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("SetCandidateMailbox: %v", err)
+	}
+
+	if err := s.IncrementMailboxSent(c.ID, "1"); err != nil {
+		t.Fatalf("IncrementMailboxSent: %v", err)
+	}
+	got, _ := s.GetCandidate(c.ID)
+	mb, _ := got.Mailbox("1")
+	if mb.SentToday != 1 {
+		t.Fatalf("SentToday = %d, want 1", mb.SentToday)
+	}
+
+	// Simulate a stale counter from yesterday: the next increment must reset
+	// to 1, not accumulate on top of a prior day's count.
+	if _, err := s.UpdateCandidate(c.ID, func(cand Candidate) (Candidate, error) {
+		cand.GmailMailboxes[0].SentTodayDate = "2000-01-01"
+		cand.GmailMailboxes[0].SentToday = 40
+		return cand, nil
+	}); err != nil {
+		t.Fatalf("UpdateCandidate: %v", err)
+	}
+	if err := s.IncrementMailboxSent(c.ID, "1"); err != nil {
+		t.Fatalf("IncrementMailboxSent (rollover): %v", err)
+	}
+	got, _ = s.GetCandidate(c.ID)
+	mb, _ = got.Mailbox("1")
+	if mb.SentToday != 1 {
+		t.Errorf("SentToday after rollover = %d, want 1 (not accumulated on the stale count)", mb.SentToday)
 	}
 }
 

@@ -451,8 +451,9 @@ const gmailTokenBytes = 16
 // admin has to issue a fresh one.
 const gmailTokenTTL = 48 * time.Hour
 
-// CreateGmailConnectToken mints a fresh one-time token for candidateID.
-func (s *Store) CreateGmailConnectToken(candidateID string) (GmailConnectToken, error) {
+// CreateGmailConnectToken mints a fresh one-time token that finalizes into
+// the candidate's mailbox slot (one of "1".."4", see MaxMailboxesPerCandidate).
+func (s *Store) CreateGmailConnectToken(candidateID, slot string) (GmailConnectToken, error) {
 	raw := make([]byte, gmailTokenBytes)
 	if _, err := rand.Read(raw); err != nil {
 		return GmailConnectToken{}, fmt.Errorf("generate token: %w", err)
@@ -461,6 +462,7 @@ func (s *Store) CreateGmailConnectToken(candidateID string) (GmailConnectToken, 
 	t := GmailConnectToken{
 		Token:       hex.EncodeToString(raw),
 		CandidateID: candidateID,
+		Slot:        slot,
 		ExpiresAt:   now.Add(gmailTokenTTL),
 		CreatedAt:   now,
 	}
@@ -506,28 +508,90 @@ func (s *Store) MarkGmailConnectTokenUsed(token string) error {
 	})
 }
 
-// SetCandidateGmail records a successful Gmail connection on a candidate.
-func (s *Store) SetCandidateGmail(candidateID, email, accessToken, refreshToken, scope string, expiresAt time.Time) (Candidate, error) {
+// errTooManyMailboxes is returned by SetCandidateMailbox when a candidate
+// already has MaxMailboxesPerCandidate connected and slot names a new one.
+var errTooManyMailboxes = fmt.Errorf("kandidatda allaqachon %d ta Gmail ulangan (maksimal)", MaxMailboxesPerCandidate)
+
+// SetCandidateMailbox records a successful Gmail connection into one of a
+// candidate's mailbox slots — creating the slot if it doesn't exist yet
+// (rejected once MaxMailboxesPerCandidate is reached), overwriting it if it
+// does (a reconnect after the refresh token was revoked, say).
+func (s *Store) SetCandidateMailbox(candidateID, slot, email, accessToken, refreshToken, scope string, expiresAt time.Time) (Candidate, error) {
 	return s.UpdateCandidate(candidateID, func(c Candidate) (Candidate, error) {
-		c.GmailEmail = email
-		c.GmailConnectedAt = time.Now().UTC()
-		c.GmailAccessToken = accessToken
-		c.GmailRefreshToken = refreshToken
-		c.GmailTokenExpiresAt = expiresAt
-		c.GmailScope = scope
+		next := GmailMailbox{
+			Slot: slot, Email: email, ConnectedAt: time.Now().UTC(),
+			AccessToken: accessToken, RefreshToken: refreshToken,
+			Scope: scope, TokenExpiresAt: expiresAt,
+		}
+		for i, m := range c.GmailMailboxes {
+			if m.Slot == slot {
+				next.DailyCap = m.DailyCap // preserve an admin-set cap across a reconnect
+				next.SentToday, next.SentTodayDate = m.SentToday, m.SentTodayDate
+				c.GmailMailboxes[i] = next
+				return c, nil
+			}
+		}
+		if len(c.GmailMailboxes) >= MaxMailboxesPerCandidate {
+			return Candidate{}, errTooManyMailboxes
+		}
+		c.GmailMailboxes = append(c.GmailMailboxes, next)
 		return c, nil
 	})
 }
 
-// ClearCandidateGmail disconnects a candidate's Gmail (the "Uzish" button).
-func (s *Store) ClearCandidateGmail(candidateID string) (Candidate, error) {
+// ClearCandidateMailbox disconnects one of a candidate's mailboxes (the
+// "Uzish" button on that slot).
+func (s *Store) ClearCandidateMailbox(candidateID, slot string) (Candidate, error) {
 	return s.UpdateCandidate(candidateID, func(c Candidate) (Candidate, error) {
-		c.GmailEmail = ""
-		c.GmailConnectedAt = time.Time{}
-		c.GmailAccessToken = ""
-		c.GmailRefreshToken = ""
-		c.GmailTokenExpiresAt = time.Time{}
-		c.GmailScope = ""
+		out := c.GmailMailboxes[:0]
+		for _, m := range c.GmailMailboxes {
+			if m.Slot != slot {
+				out = append(out, m)
+			}
+		}
+		c.GmailMailboxes = out
 		return c, nil
 	})
+}
+
+// SetMailboxDailyCap updates one mailbox's admin-configurable daily send cap
+// (clamped to 1..MaxDailyCapPerMailbox).
+func (s *Store) SetMailboxDailyCap(candidateID, slot string, dailyCap int) (Candidate, error) {
+	if dailyCap < 1 {
+		dailyCap = 1
+	}
+	if dailyCap > MaxDailyCapPerMailbox {
+		dailyCap = MaxDailyCapPerMailbox
+	}
+	return s.UpdateCandidate(candidateID, func(c Candidate) (Candidate, error) {
+		for i, m := range c.GmailMailboxes {
+			if m.Slot == slot {
+				c.GmailMailboxes[i].DailyCap = dailyCap
+				return c, nil
+			}
+		}
+		return Candidate{}, errNotFound
+	})
+}
+
+// IncrementMailboxSent bumps a mailbox's today-sent counter by one, rolling
+// it over first if the stored date isn't today — called right after a
+// successful send through that mailbox.
+func (s *Store) IncrementMailboxSent(candidateID, slot string) error {
+	today := time.Now().UTC().Format("2006-01-02")
+	_, err := s.UpdateCandidate(candidateID, func(c Candidate) (Candidate, error) {
+		for i, m := range c.GmailMailboxes {
+			if m.Slot != slot {
+				continue
+			}
+			if m.SentTodayDate != today {
+				c.GmailMailboxes[i].SentToday = 0
+				c.GmailMailboxes[i].SentTodayDate = today
+			}
+			c.GmailMailboxes[i].SentToday++
+			return c, nil
+		}
+		return Candidate{}, errNotFound
+	})
+	return err
 }
