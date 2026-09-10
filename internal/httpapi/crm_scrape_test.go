@@ -90,3 +90,31 @@ func TestMergeJobsByIDNoNewJobs(t *testing.T) {
 		t.Fatalf("newOnes = %+v, want none", newOnes)
 	}
 }
+
+// TestFilterByTitle guards the fix for Bundesagentur's loose "was" search:
+// verified live, "Ausbildung Pflege" pulled in postings with no real
+// connection to the query (Ayurveda-Therapeut, Bäckergeselle, BIM-Modeler)
+// alongside genuine "Ausbildung ..." titles — filterByTitle is what keeps
+// only the latter.
+func TestFilterByTitle(t *testing.T) {
+	jobs := []model.Job{
+		{ID: "1", Title: "Ausbildung Anlagenmechaniker (m/w/d)"},
+		{ID: "2", Title: "Ayurveda-Therapeut (m/w/d)"},
+		{ID: "3", Title: "AUSBILDUNG 2027 - Mechatroniker"}, // case-insensitive match
+		{ID: "4", Title: "Bäckergeselle oder -meister (m/w/d)"},
+	}
+
+	kept := filterByTitle(jobs, "ausbildung")
+	if len(kept) != 2 {
+		t.Fatalf("kept = %d jobs, want 2 (only titles actually containing 'ausbildung'): %+v", len(kept), kept)
+	}
+	for _, j := range kept {
+		if j.ID != "1" && j.ID != "3" {
+			t.Errorf("unexpected job kept: %+v", j)
+		}
+	}
+
+	if got := filterByTitle(jobs, ""); len(got) != len(jobs) {
+		t.Errorf("empty needle should be a no-op, got %d jobs, want %d", len(got), len(jobs))
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"faangjobs/internal/crm"
@@ -26,15 +27,29 @@ import (
 // model.Job.ID (which is prefixed by the company id, see bundesagentur.go)
 // naturally dedupes the same real-world posting across scrape runs. A
 // direction with no entry here has no working scraper yet (shown as "tez
-// orada" in the UI) — Til kursi and Au pair, until a source site is chosen.
+// orada" in the UI) — Til kursi and Au pair, until each has a source that
+// actually returns relevant results.
+//
+// Til kursi was tried here with "was": "Sprachkurs" and reverted: verified
+// live against Bundesagentur's real API, it returned zero relevant results
+// (Mechatroniker, Industrieelektriker, Produktionsmitarbeiter — Bundesagentur
+// is a job board, not a course-enrollment platform, and its "was" search is
+// loose enough that an unmatched multi-word query just returns noise).
+// Ausbildung's own results had the same problem — "Ausbildung Pflege" pulled
+// in clearly unrelated postings (Ayurveda-Therapeut, Bäckergeselle,
+// BIM-Modeler) alongside the real ones — fixed by titleMustContain below,
+// which keeps only postings whose title actually names the word being
+// searched for; MFA/ZFA needs no such filter since its search term
+// ("Medizinische Fachangestellte") already returns clean results.
 type directionScrapeConfig struct {
-	searchTerm string // Bundesagentur "was" query
-	slug       string
+	searchTerm       string // Bundesagentur "was" query
+	slug             string
+	titleMustContain string // case-insensitive; "" skips the check
 }
 
 var directionScrapeConfigs = map[string]directionScrapeConfig{
 	crm.DirectionMFAZFA:     {searchTerm: "Medizinische Fachangestellte", slug: "mfa-ondemand"},
-	crm.DirectionAusbildung: {searchTerm: "Ausbildung Pflege", slug: "ausbildung-ondemand"},
+	crm.DirectionAusbildung: {searchTerm: "Ausbildung Pflege", slug: "ausbildung-ondemand", titleMustContain: "ausbildung"},
 }
 
 func (a *CRMAPI) registerScrapeRoutes(mux *http.ServeMux) {
@@ -150,6 +165,7 @@ func (a *CRMAPI) scrapeOndemand(ctx context.Context, cfg directionScrapeConfig, 
 	if err != nil {
 		return nil, nil, err
 	}
+	fetched = filterByTitle(fetched, cfg.titleMustContain)
 
 	existing, err := a.jobStore.ReadCompany(company.ID)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -201,4 +217,24 @@ func mergeJobsByID(existing, fetched []model.Job) (merged, newOnes []model.Job) 
 		seen[j.ID] = true
 	}
 	return merged, newOnes
+}
+
+// filterByTitle keeps only jobs whose Title contains needle
+// (case-insensitive); an empty needle is a no-op. This is the fix for
+// Bundesagentur's "was" search being a loose keyword match rather than an
+// exact one — a multi-word searchTerm like "Ausbildung Pflege" pulls in
+// postings that only vaguely relate to the query unless the title itself
+// is also checked.
+func filterByTitle(jobs []model.Job, needle string) []model.Job {
+	if needle == "" {
+		return jobs
+	}
+	needle = strings.ToLower(needle)
+	kept := jobs[:0]
+	for _, j := range jobs {
+		if strings.Contains(strings.ToLower(j.Title), needle) {
+			kept = append(kept, j)
+		}
+	}
+	return kept
 }
