@@ -1,0 +1,3 @@
+# Deploy scripts and configs run on Linux — never check them out with CRLF.
+*.sh text eol=lf
+deploy/* text eol=lf

@@ -187,9 +187,13 @@ func main() {
 		Addr:              *addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       20 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// Generous enough for a 20 MiB CV upload over a slow connection.
+		ReadTimeout: 2 * time.Minute,
+		// A candidate scrape fetches Bundesagentur (with retries) and then
+		// runs auto-apply synchronously in the same request, which can take
+		// well over a minute — a short WriteTimeout would cut it off mid-run.
+		WriteTimeout: 10 * time.Minute,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -232,124 +232,89 @@ remember its `-jobs` filter defaults to developer/IT roles, so pass
 
 ## Deployment (Ubuntu VPS)
 
-Everything the repo needs at runtime is either Go stdlib or already committed
-to git (`internal/webui/dist`, the prebuilt frontend) — no Node/npm, no
-database, no package manager beyond `apt` for Go itself. These are the steps
-for a fresh Ubuntu server once one exists.
+Everything needed at runtime is Go stdlib or already committed to git
+(`internal/webui/dist`, the prebuilt frontend) — no Node/npm, no database.
+The `deploy/` folder automates the whole setup:
 
-### 1. Prerequisites
+| File | What it does |
+|------|--------------|
+| `deploy/install.sh` | One-time provisioning: Go (official tarball — Ubuntu's `golang-go` is older than `go.mod` requires), `faangjobs` system user, clone into `/opt/faangjobs`, build, systemd service, Caddy (HTTPS + basic auth), ufw firewall, nightly backups. Idempotent — safe to re-run. |
+| `deploy/update.sh` | `git pull --ff-only` → build to `*.new` → swap → restart → wait for `/healthz`. A failed build never touches the running server. |
+| `deploy/backup.sh` | Tars `data/` (CRM, CVs, Gmail tokens, scrape pools) into `/var/backups/faangjobs`, keeps 14 days. Run nightly by cron. |
+| `deploy/faangjobs.service` | Hardened systemd unit; listens on `127.0.0.1:8080` only, may write only to `data/`. |
+| `deploy/Caddyfile.template` | TLS via Let's Encrypt, basic auth in front of everything except the candidate-facing Gmail-connect paths and `/healthz`. |
 
-```bash
-sudo apt update && sudo apt install -y golang-go git
-go version   # confirm it matches (or exceeds) the version in go.mod
-```
+### 1. Before you start
 
-A **domain name pointed at the VPS's IP** is required, not optional — Google
-OAuth only allows `https://` redirect URIs in production (only `localhost` is
-exempt), so Gmail integration cannot work over a bare IP or plain `http://`.
-Point an A record (e.g. `crm.yourdomain.com`) at the VPS before continuing.
+- An Ubuntu 22.04/24.04 VPS with SSH root/sudo access.
+- **A domain whose A record points at the VPS** (e.g. `crm.yourdomain.com`).
+  Required, not optional: Google OAuth only accepts `https://` redirect URIs
+  outside `localhost`, and Caddy needs the domain to get a certificate.
+- If the GitHub repo is private: a read-only token or deploy key.
 
-### 2. Clone and build
-
-```bash
-sudo mkdir -p /opt/faangjobs && sudo chown $USER /opt/faangjobs
-git clone https://github.com/sanakulovme/jobs.git /opt/faangjobs
-cd /opt/faangjobs
-make binaries   # -> bin/crawler, bin/server
-```
-
-### 3. Configure secrets
+### 2. Install
 
 ```bash
-cp .env.example .env
+curl -fsSL https://raw.githubusercontent.com/sanakulovme/jobs/main/deploy/install.sh -o install.sh
+sudo DOMAIN=crm.yourdomain.com bash install.sh
 ```
 
-Fill in `.env` with the Google Cloud OAuth Client ID/Secret and set
-`FAANGJOBS_GOOGLE_REDIRECT_URL=https://crm.yourdomain.com/api/crm/gmail/callback`
-(must match **exactly** what's registered in Google Cloud Console → APIs &
-Services → Credentials, including scheme and path). Update the redirect URI
-there before testing any Gmail connection — the existing entry from local dev
-points at `localhost:8080` and won't work here.
+(Private repo: download `install.sh` by other means and add
+`REPO_URL=https://<token>@github.com/sanakulovme/jobs.git`.) At the end it
+prints the **CRM login** (basic auth) once — save it. Pass
+`BASIC_USER=... BASIC_PASSWORD=...` to choose your own, or re-run with a new
+`BASIC_PASSWORD` later to reset it.
 
-42.uz auth (`FAANGJOBS_JWT_SECRET` and friends) is optional; since this board
-is now the firm's private CRM rather than a public course board, leaving it
-unset (open board, gated instead by the reverse proxy / firewall below) is
-usually the right call — set it only if 42.uz login-gating is still wanted.
+### 3. Secrets
 
-### 4. First data population
+`install.sh` creates `/opt/faangjobs/.env` (mode 600) from `.env.example` with
+the redirect URL already set to `https://<DOMAIN>/api/crm/gmail/callback`.
+Fill in the Google OAuth client ID/secret, then:
 
 ```bash
-./bin/crawler -data ./data -jobs all   # -jobs all is mandatory, see Scheduling above
+sudo systemctl restart faangjobs
 ```
 
-### 5. Run the server as a systemd service
+In Google Cloud Console → APIs & Services → Credentials → the OAuth client,
+add that exact redirect URI (the local-dev `localhost:8080` one won't work
+here). 42.uz auth (`FAANGJOBS_JWT_SECRET`) stays optional — the CRM is already
+gated by Caddy's basic auth.
 
-`/etc/systemd/system/faangjobs.service`:
-
-```ini
-[Unit]
-Description=FaangJobs server
-After=network.target
-
-[Service]
-Type=simple
-User=%i
-WorkingDirectory=/opt/faangjobs
-ExecStart=/opt/faangjobs/bin/server -data /opt/faangjobs/data -addr 127.0.0.1:8080
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-(Replace `User=%i` with the actual deploy user, e.g. `User=deploy`.) Then:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now faangjobs
-sudo systemctl status faangjobs
-```
-
-The server binds to `127.0.0.1:8080` (not exposed directly) and loads `.env`
-from its working directory automatically — no secrets in the unit file.
-
-### 6. Reverse proxy + TLS
-
-The simplest option is [Caddy](https://caddyserver.com), which gets a
-Let's Encrypt certificate automatically from just a domain name:
-
-```bash
-sudo apt install -y caddy
-```
-
-`/etc/caddy/Caddyfile`:
-
-```
-crm.yourdomain.com {
-    reverse_proxy 127.0.0.1:8080
-}
-```
-
-```bash
-sudo systemctl reload caddy
-```
-
-(nginx + certbot works too if Caddy isn't available — same idea: TLS
-terminates at the proxy, proxies plain HTTP to `127.0.0.1:8080`.)
-
-### 7. Verify
+### 4. Verify
 
 ```bash
 curl -s https://crm.yourdomain.com/healthz
+journalctl -u faangjobs -f
 ```
 
-Then in a browser: the job board at `https://crm.yourdomain.com/`, the CRM at
-`/crm`, a candidate's "Scrape" action against a real city (see
-[Candidate-scoped scraping](#candidate-scoped-scraping-no-daily-cron) above),
+Then in a browser: the board at `/`, the CRM at `/crm`, a candidate's
+"Scrape" action (see [Candidate-scoped scraping](#candidate-scoped-scraping-no-daily-cron)),
 and — only once ready to test it live — a Gmail connect link from a
-candidate's profile, confirming the OAuth round trip lands back on the new
-domain correctly.
+candidate's profile, confirming the OAuth round trip lands back on the domain.
+
+Optionally seed the board with a full crawl (`-jobs all` is mandatory, see above):
+
+```bash
+sudo -u faangjobs -H /opt/faangjobs/bin/crawler -data /opt/faangjobs/data -jobs all
+```
+
+### 5. Updating
+
+Push to `main`, then on the VPS:
+
+```bash
+sudo bash /opt/faangjobs/deploy/update.sh
+```
+
+### Moving existing local data
+
+The CRM lives in `data/crm/` (candidates, CVs, templates, applications,
+Gmail tokens). To carry over what you have locally, before the first real use:
+
+```bash
+scp -r data/crm root@crm.yourdomain.com:/opt/faangjobs/data/
+ssh root@crm.yourdomain.com "chown -R faangjobs:faangjobs /opt/faangjobs/data && systemctl restart faangjobs"
+```
 
 ---
 

@@ -1,0 +1,32 @@
+[Unit]
+Description=FaangJobs server (job board + CRM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=faangjobs
+Group=faangjobs
+WorkingDirectory=/opt/faangjobs
+# .env (Gmail OAuth secrets, ...) is loaded from WorkingDirectory by the
+# server itself — no secrets in this unit file.
+ExecStart=/opt/faangjobs/bin/server -data /opt/faangjobs/data -addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+# Candidate scrapes can run for minutes; give them time to finish on stop.
+TimeoutStopSec=30
+
+# Hardening: the server only needs to write under its own data dir.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/faangjobs/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

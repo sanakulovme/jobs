@@ -1,0 +1,34 @@
+# Rendered into /etc/caddy/Caddyfile by deploy/install.sh
+# (__DOMAIN__, __BASIC_USER__, __BASIC_HASH__ are substituted there).
+#
+# Caddy obtains and renews the Let's Encrypt certificate automatically.
+
+__DOMAIN__ {
+	encode gzip
+
+	# Everything (job board, CRM, candidate PII, CV uploads) sits behind
+	# HTTP basic auth — the app itself has no login of its own — EXCEPT the
+	# paths a *candidate* opens from a shared link (Gmail connect + Google's
+	# OAuth redirect back to us) and the health check; those are guarded by
+	# one-time tokens / OAuth state, not by the CRM password.
+	@private not path /gmail-connect/* /api/crm/gmail/callback /healthz /api/healthz
+	basic_auth @private {
+		__BASIC_USER__ __BASIC_HASH__
+	}
+
+	# CV uploads are capped at 20 MiB by the app; leave a little headroom.
+	request_body {
+		max_size 25MB
+	}
+
+	reverse_proxy 127.0.0.1:8080 {
+		# Candidate scrapes run auto-apply inside the request.
+		transport http {
+			response_header_timeout 10m
+		}
+	}
+
+	log {
+		output file /var/log/caddy/faangjobs.log
+	}
+}
