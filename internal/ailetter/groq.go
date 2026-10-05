@@ -65,7 +65,7 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 		}
 	}
 
-	reqBody, err := json.Marshal(map[string]any{
+	params := map[string]any{
 		"model": g.model,
 		"messages": []groqMessage{
 			{Role: "system", Content: systemPrompt + "\n\nReply with a JSON object with the keys \"subject\" and \"body\"."},
@@ -79,8 +79,14 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 				"schema": letterSchema,
 			},
 		},
-		"temperature": 0.4,
-	})
+		"temperature": 0.2,
+	}
+	// gpt-oss is a reasoning model; at the default effort it drifted from
+	// the no-invented-facts rules in live tests, so give it more room.
+	if strings.HasPrefix(g.model, "openai/gpt-oss") {
+		params["reasoning_effort"] = "high"
+	}
+	reqBody, err := json.Marshal(params)
 	if err != nil {
 		return Letter{}, err
 	}

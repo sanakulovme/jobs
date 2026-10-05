@@ -55,6 +55,7 @@ Content:
 - Mention that the CV and documents are attached, and close with a request for a personal conversation.
 - Sign off with "Mit freundlichen Grüßen", then the candidate's full name, then their phone number and e-mail on separate lines if given.
 - 150 to 250 words. No placeholders, no square brackets, no markdown, no bullet lists.
+- The field labels in the data below are internal notes for you. Never quote or paraphrase them in the e-mail, and never mention the agency.
 
 The subject is a short German subject line, normally "Bewerbung als <job title> – <candidate full name>", adjusted if the title is very long.`
 
@@ -105,7 +106,6 @@ func describe(in Input) string {
 	line("German level", c.GermanLevel)
 	line("Citizenship", c.Citizenship)
 	line("Currently lives in", c.CurrentCountry)
-	line("Recruiting track (what the agency places them into, not experience)", directionNames[c.Direction])
 	for _, s := range in.Profile.Specialties {
 		line("Applies for (target field, not proof of training)", specialtyName(s.Specialty))
 		if s.ExperienceYears > 0 {
@@ -129,14 +129,6 @@ func describe(in Input) string {
 
 	fmt.Fprintf(&b, "Greeting to open with: %s\n", crm.Greeting(j))
 	return b.String()
-}
-
-// directionNames spells out crm.Directions for the model.
-var directionNames = map[string]string{
-	crm.DirectionMFAZFA:     "Medizinische/Zahnmedizinische Fachangestellte (MFA/ZFA)",
-	crm.DirectionAusbildung: "Ausbildung (Berufsausbildung)",
-	crm.DirectionSprachkurs: "Sprachkurs",
-	crm.DirectionAuPair:     "Au-pair",
 }
 
 // specialtyNames spells out model.SpecialtyVocabulary slugs, so the model
