@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fakeGroq(t *testing.T, status int, reply any, got *map[string]any) *Groq {
@@ -68,6 +69,30 @@ func TestGroqWriteUnreadableCVFallsBack(t *testing.T) {
 	user := req["messages"].([]any)[1].(map[string]any)["content"].(string)
 	if !strings.Contains(user, "could not be extracted") {
 		t.Errorf("unreadable CV should be described: %q", user[:120])
+	}
+}
+
+func TestGroqWriteRetriesTransientFailures(t *testing.T) {
+	retryBase = time.Millisecond
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
+			return
+		}
+		json.NewEncoder(w).Encode(groqReply(`{"subject":"S","body":"B"}`, "stop"))
+	}))
+	t.Cleanup(srv.Close)
+	g := NewGroq("test-key", "")
+	g.url = srv.URL
+
+	if _, err := g.Write(context.Background(), testInput(nil)); err != nil {
+		t.Fatalf("Write after two 429s: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("calls = %d, want 3", calls)
 	}
 }
 

@@ -78,7 +78,7 @@ func TestClaudeWriteBuildsRequestAndParsesLetter(t *testing.T) {
 		t.Errorf("first block should be the cached CV document, got %v", first["type"])
 	}
 	prompt := content[len(content)-1].(map[string]any)["text"].(string)
-	for _, want := range []string{"Dilnoza Karimova", "B2", "kardiologie (3 years experience)", "Praxis Dr. Weber", "Kardiologie", "Greeting to open with: Sehr geehrte Frau Weber,"} {
+	for _, want := range []string{"Dilnoza Karimova", "B2", "Stated experience: 3 years in Kardiologie", "Praxis Dr. Weber", "Kardiologie", "Greeting to open with: Sehr geehrte Frau Weber,"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q", want)
 		}

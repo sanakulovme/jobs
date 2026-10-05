@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -84,24 +85,9 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 		return Letter{}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.url, bytes.NewReader(reqBody))
+	body, err := g.post(ctx, reqBody)
 	if err != nil {
 		return Letter{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+g.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return Letter{}, fmt.Errorf("AI xat yozolmadi: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return Letter{}, fmt.Errorf("AI javobini o'qib bo'lmadi: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return Letter{}, fmt.Errorf("AI xat yozolmadi: Groq %d: %s", resp.StatusCode, groqErrorMessage(body))
 	}
 
 	var out struct {
@@ -120,6 +106,87 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 		return Letter{}, errors.New("AI javobi chegaraga yetib kesildi")
 	}
 	return parseLetter(out.Choices[0].Message.Content)
+}
+
+// groqAttempts is how many times one letter request is tried. Retries
+// cover what a busy free tier and a flaky network actually produce:
+// connection errors, 429 rate limits and 5xx responses.
+const groqAttempts = 4
+
+// retryBase scales the backoff; tests shrink it.
+var retryBase = 2 * time.Second
+
+// post sends one chat-completions request, retrying transient failures with
+// backoff (or the server's Retry-After, capped), and returns the 200 body.
+func (g *Groq) post(ctx context.Context, reqBody []byte) ([]byte, error) {
+	var lastErr error
+	for attempt := 1; attempt <= groqAttempts; attempt++ {
+		if attempt > 1 {
+			if err := sleepCtx(ctx, backoff(attempt, lastErr)); err != nil {
+				return nil, lastErr
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.url, bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+g.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := g.http.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("AI xat yozolmadi: %w", err)
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("AI javobini o'qib bo'lmadi: %w", err)
+			continue
+		}
+		if resp.StatusCode == http.StatusOK {
+			return body, nil
+		}
+		apiErr := &groqStatusError{status: resp.StatusCode, msg: groqErrorMessage(body), retryAfter: resp.Header.Get("Retry-After")}
+		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
+			return nil, apiErr // a bad key or a bad request won't fix itself
+		}
+		lastErr = apiErr
+	}
+	return nil, lastErr
+}
+
+type groqStatusError struct {
+	status     int
+	msg        string
+	retryAfter string
+}
+
+func (e *groqStatusError) Error() string {
+	return fmt.Sprintf("AI xat yozolmadi: Groq %d: %s", e.status, e.msg)
+}
+
+// backoff waits 2s, 4s, 8s… or what a 429's Retry-After asks, up to 30s.
+func backoff(attempt int, lastErr error) time.Duration {
+	wait := retryBase << (attempt - 2)
+	var se *groqStatusError
+	if errors.As(lastErr, &se) && se.retryAfter != "" {
+		if secs, err := strconv.ParseFloat(se.retryAfter, 64); err == nil && secs > 0 {
+			wait = time.Duration(secs * float64(time.Second))
+		}
+	}
+	return min(wait, 30*time.Second)
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 // groqErrorMessage pulls the human-readable message out of an error body.
