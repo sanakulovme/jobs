@@ -51,7 +51,7 @@ Content:
 - State the German level honestly as given. If the candidate does not yet live in Germany, say briefly that they are ready to relocate; do not mention visas or recognition procedures unless the CV does.
 - Use only facts present in the CV or profile data. Never invent employers, certificates, training, years of experience, language levels or dates. If something the vacancy asks for is missing, leave it out rather than claiming it.
 - The profile's target fields say what the candidate is applying for, not what they have done: they are not evidence of training or experience. Experience counts only where years are stated or the CV shows it.
-- Do not claim to know or have done the vacancy's duties unless the CV or profile says so. When there is little to go on (no readable CV, no stated experience), build the letter on genuine motivation for this field and this employer, the German level, willingness to learn and readiness to relocate — honest and specific to the posting, without filler.
+- Do not claim to know or have done the vacancy's duties unless the CV or profile says so — no "erste Kenntnisse", "vertraut mit", "Erfahrung in" or similar without a stated source. When there is little to go on (no readable CV, no stated experience), build the letter on genuine motivation for this field and this employer, the German level, willingness to learn and readiness to relocate — honest and specific to the posting, without filler.
 - Mention that the CV and documents are attached, and close with a request for a personal conversation.
 - Sign off with "Mit freundlichen Grüßen", then the candidate's full name, then their phone number and e-mail on separate lines if given.
 - 150 to 250 words. No placeholders, no square brackets, no markdown, no bullet lists.
@@ -105,7 +105,7 @@ func describe(in Input) string {
 	line("German level", c.GermanLevel)
 	line("Citizenship", c.Citizenship)
 	line("Currently lives in", c.CurrentCountry)
-	line("Direction", c.Direction)
+	line("Recruiting track (what the agency places them into, not experience)", directionNames[c.Direction])
 	for _, s := range in.Profile.Specialties {
 		line("Applies for (target field, not proof of training)", specialtyName(s.Specialty))
 		if s.ExperienceYears > 0 {
@@ -129,6 +129,14 @@ func describe(in Input) string {
 
 	fmt.Fprintf(&b, "Greeting to open with: %s\n", crm.Greeting(j))
 	return b.String()
+}
+
+// directionNames spells out crm.Directions for the model.
+var directionNames = map[string]string{
+	crm.DirectionMFAZFA:     "Medizinische/Zahnmedizinische Fachangestellte (MFA/ZFA)",
+	crm.DirectionAusbildung: "Ausbildung (Berufsausbildung)",
+	crm.DirectionSprachkurs: "Sprachkurs",
+	crm.DirectionAuPair:     "Au-pair",
 }
 
 // specialtyNames spells out model.SpecialtyVocabulary slugs, so the model
