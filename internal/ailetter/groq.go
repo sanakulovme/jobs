@@ -81,10 +81,10 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 		},
 		"temperature": 0.2,
 	}
-	// gpt-oss is a reasoning model; at the default effort it drifted from
-	// the no-invented-facts rules in live tests, so give it more room.
+	// gpt-oss is a reasoning model. "high" made Groq's strict-JSON check
+	// fail on most letters in live tests, so stay at medium.
 	if strings.HasPrefix(g.model, "openai/gpt-oss") {
-		params["reasoning_effort"] = "high"
+		params["reasoning_effort"] = "medium"
 	}
 	reqBody, err := json.Marshal(params)
 	if err != nil {
@@ -153,8 +153,11 @@ func (g *Groq) post(ctx context.Context, reqBody []byte) ([]byte, error) {
 		if resp.StatusCode == http.StatusOK {
 			return body, nil
 		}
-		apiErr := &groqStatusError{status: resp.StatusCode, msg: groqErrorMessage(body), retryAfter: resp.Header.Get("Retry-After")}
-		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
+		msg, code := groqError(body)
+		apiErr := &groqStatusError{status: resp.StatusCode, msg: msg, retryAfter: resp.Header.Get("Retry-After")}
+		// A generation that failed Groq's JSON-schema check is a sampling
+		// fluke, not a bad request, so it is retried like a 429.
+		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 && code != "json_validate_failed" {
 			return nil, apiErr // a bad key or a bad request won't fix itself
 		}
 		lastErr = apiErr
@@ -195,17 +198,19 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// groqErrorMessage pulls the human-readable message out of an error body.
-func groqErrorMessage(body []byte) string {
+// groqError pulls the human-readable message and the error code out of an
+// error body.
+func groqError(body []byte) (msg, code string) {
 	var e struct {
 		Error struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
-		return e.Error.Message
+		return e.Error.Message, e.Error.Code
 	}
-	return strings.TrimSpace(string(body))
+	return strings.TrimSpace(string(body)), ""
 }
 
 // pdfText extracts a PDF's text with pdftotext (poppler-utils). It fails
