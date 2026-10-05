@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { CandidatesPage } from './CandidatesPage'
 import { VacanciesPage } from './VacanciesPage'
-import { TemplatesPage } from './TemplatesPage'
 import { ApplicationsPage } from './ApplicationsPage'
 import { AnalyticsPage } from './AnalyticsPage'
 import './crm.css'
 
-type Section = 'candidates' | 'vacancies' | 'applications' | 'templates' | 'analytics'
+type Section = 'candidates' | 'vacancies' | 'applications' | 'analytics'
 
 const SECTIONS: { key: Section; label: string; ready: boolean }[] = [
   { key: 'candidates', label: 'Kandidatlar', ready: true },
   { key: 'vacancies', label: 'Vakansiyalar', ready: true },
   { key: 'applications', label: 'Arizalar', ready: true },
-  { key: 'templates', label: 'Xat shabloni', ready: true },
   { key: 'analytics', label: 'Analitika', ready: true },
 ]
 
@@ -52,7 +50,6 @@ export function CrmShell() {
       <main className="main">
         {section === 'candidates' && <CandidatesPage />}
         {section === 'vacancies' && <VacanciesPage />}
-        {section === 'templates' && <TemplatesPage />}
         {section === 'applications' && <ApplicationsPage />}
         {section === 'analytics' && <AnalyticsPage />}
       </main>

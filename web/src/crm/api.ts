@@ -110,7 +110,6 @@ export type Application = {
   vacancyTitle: string
   employer: string
   applicationProfileId?: string
-  letterTemplateId?: string
   status: string
   subject: string
   body: string
@@ -121,17 +120,6 @@ export type Application = {
   sentAt?: string
   error?: string
   createdAt: string
-}
-
-export type LetterTemplate = {
-  id: string
-  name: string
-  subject: string
-  body: string
-  specialty?: string
-  isDefault: boolean
-  createdAt: string
-  updatedAt: string
 }
 
 export type Vacancy = {
@@ -328,18 +316,6 @@ export const crmApi = {
       `/api/crm/vacancies/${encodeURIComponent(jobId)}/matches`,
       signal,
     ),
-
-  templates: (signal?: AbortSignal) =>
-    getJSON<{ templates: LetterTemplate[]; total: number }>('/api/crm/templates', signal),
-  createTemplate: (input: { name: string; subject: string; body: string; specialty?: string; isDefault?: boolean }) =>
-    postJSON<LetterTemplate>('/api/crm/templates', input),
-  updateTemplate: (
-    id: string,
-    input: { name: string; subject: string; body: string; specialty?: string; isDefault?: boolean },
-  ) => patchJSON<LetterTemplate>(`/api/crm/templates/${encodeURIComponent(id)}`, input),
-  deleteTemplate: (id: string) => del(`/api/crm/templates/${encodeURIComponent(id)}`),
-  previewDraft: (subject: string, body: string) =>
-    postJSON<{ subject: string; body: string }>('/api/crm/templates/preview', { subject, body }),
 
   applications: (
     params: { candidateId?: string; vacancyId?: string; status?: string } = {},

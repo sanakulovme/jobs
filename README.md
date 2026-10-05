@@ -222,6 +222,19 @@ genuinely new postings, and hit "Scrape". That one action:
    `/api/crm/run`'s "Hozir boshlash" button; a real send is still a separate,
    explicit choice each time.
 
+### AI-written application letters
+
+There are no letter templates. Every application e-mail is written by
+Claude (`claude-opus-5-5`, `internal/ailetter`) from that one vacancy (full
+description included) and that one candidate: their CRM record, the matched
+profile's specialties/experience and, when it is a PDF, their CV. The letter
+is German, formal, 150–250 words, and may only use facts from the CV/profile.
+Test mode writes the letters too (so they can be reviewed) but never sends.
+
+Set `ANTHROPIC_API_KEY` in `.env`; without it every auto-apply run (test mode
+included) is refused with a clear error. Each letter is one API call, so a
+run of N letters takes roughly N × 10–30 s.
+
 The registry (`internal/registry/companies.json`) is still scoped to
 MFA/Germany, and standalone `./bin/crawler` still works exactly as before
 (useful for bulk/manual re-scrapes or seeding a fresh `./data` dir) — just
@@ -309,7 +322,7 @@ sudo bash /opt/faangjobs/deploy/update.sh
 
 ### Moving existing local data
 
-The CRM lives in `data/crm/` (candidates, CVs, templates, applications,
+The CRM lives in `data/crm/` (candidates, CVs, applications,
 Gmail tokens). To carry over what you have locally, before the first real use:
 
 ```bash

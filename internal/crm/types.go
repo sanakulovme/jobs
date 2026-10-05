@@ -1,6 +1,6 @@
 // Package crm implements the candidate/vacancy CRM layer on top of the job
-// board: candidates, their documents and application profiles, letter
-// templates, sent applications, and employer replies. It depends on
+// board: candidates, their documents and application profiles, sent
+// applications, and employer replies. It depends on
 // internal/model (for model.Job and the shared specialty vocabulary) but
 // internal/model never depends back on it — the job board works standalone;
 // the CRM is what's layered on top for auto-apply.
@@ -248,21 +248,6 @@ func (c Candidate) Redacted() Candidate {
 	return c
 }
 
-// LetterTemplate is a reusable application-letter body with {{token}}
-// placeholders (see render.go for the supported tokens). A template may be
-// narrowed to one specialty (preferred when a vacancy matches it) or left
-// generic (fits any vacancy).
-type LetterTemplate struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Subject   string    `json:"subject"`
-	Body      string    `json:"body"`
-	Specialty string    `json:"specialty,omitempty"` // "" = fits any vacancy
-	IsDefault bool      `json:"isDefault"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
 // Application statuses.
 const (
 	AppStatusDraft  = "draft"
@@ -281,7 +266,6 @@ type Application struct {
 	VacancyTitle         string `json:"vacancyTitle"`
 	Employer             string `json:"employer"`
 	ApplicationProfileID string `json:"applicationProfileId,omitempty"`
-	LetterTemplateID     string `json:"letterTemplateId,omitempty"`
 
 	Status  string `json:"status"`
 	Subject string `json:"subject"`

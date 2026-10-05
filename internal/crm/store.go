@@ -19,7 +19,6 @@ type Store struct {
 	ids *counters
 
 	candidates       *table[Candidate]
-	templates        *table[LetterTemplate]
 	applications     *table[Application]
 	replies          *table[Reply]
 	importRuns       *table[ImportRun]
@@ -47,7 +46,6 @@ func New(dataDir string) (*Store, error) {
 		uploadsDir:       uploadsDir,
 		ids:              newCounters(filepath.Join(dir, "counters.json")),
 		candidates:       newTable[Candidate](filepath.Join(dir, "candidates.json")),
-		templates:        newTable[LetterTemplate](filepath.Join(dir, "templates.json")),
 		applications:     newTable[Application](filepath.Join(dir, "applications.json")),
 		replies:          newTable[Reply](filepath.Join(dir, "replies.json")),
 		importRuns:       newTable[ImportRun](filepath.Join(dir, "import_runs.json")),
@@ -214,73 +212,6 @@ func (s *Store) DeleteProfile(candidateID, profileID string) error {
 		return c, nil
 	})
 	return err
-}
-
-// --- letter templates ---
-
-func (s *Store) ListTemplates() ([]LetterTemplate, error) { return s.templates.Load() }
-
-func (s *Store) CreateTemplate(t LetterTemplate) (LetterTemplate, error) {
-	id, err := s.ids.Next("templates")
-	if err != nil {
-		return LetterTemplate{}, err
-	}
-	now := time.Now().UTC()
-	t.ID, t.CreatedAt, t.UpdatedAt = id, now, now
-	err = s.templates.Update(func(items []LetterTemplate) ([]LetterTemplate, error) {
-		if t.IsDefault {
-			for i := range items {
-				items[i].IsDefault = false
-			}
-		}
-		return append(items, t), nil
-	})
-	return t, err
-}
-
-func (s *Store) UpdateTemplate(id string, fn func(LetterTemplate) (LetterTemplate, error)) (LetterTemplate, error) {
-	var updated LetterTemplate
-	err := s.templates.Update(func(items []LetterTemplate) ([]LetterTemplate, error) {
-		for i := range items {
-			if items[i].ID != id {
-				continue
-			}
-			next, err := fn(items[i])
-			if err != nil {
-				return nil, err
-			}
-			next.ID = id
-			next.UpdatedAt = time.Now().UTC()
-			if next.IsDefault {
-				for j := range items {
-					items[j].IsDefault = false
-				}
-			}
-			items[i] = next
-			updated = next
-			return items, nil
-		}
-		return nil, errNotFound
-	})
-	return updated, err
-}
-
-func (s *Store) DeleteTemplate(id string) error {
-	return s.templates.Update(func(items []LetterTemplate) ([]LetterTemplate, error) {
-		out := items[:0]
-		found := false
-		for _, t := range items {
-			if t.ID == id {
-				found = true
-				continue
-			}
-			out = append(out, t)
-		}
-		if !found {
-			return nil, errNotFound
-		}
-		return out, nil
-	})
 }
 
 // --- applications ---

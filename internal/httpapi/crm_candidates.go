@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"faangjobs/internal/ailetter"
 	"faangjobs/internal/crm"
 	"faangjobs/internal/gmail"
 	"faangjobs/internal/source"
@@ -25,6 +27,15 @@ type CRMAPI struct {
 	// both nil disables that route with a clear error.
 	jobStore *store.Store
 	fetcher  *source.Fetcher
+	// letters writes every application e-mail; nil means no AI key is
+	// configured and auto-apply runs fail with errLettersNotConfigured.
+	letters LetterWriter
+}
+
+// LetterWriter writes one application e-mail for a matched candidate and
+// vacancy — *ailetter.Writer (Claude) in production.
+type LetterWriter interface {
+	Write(ctx context.Context, in ailetter.Input) (ailetter.Letter, error)
 }
 
 // NewCRMAPI builds a CRM API handler set. idx may be nil until the vacancy
@@ -32,16 +43,17 @@ type CRMAPI struct {
 // gmail.Config) until Gmail credentials are configured — every Gmail route
 // checks gmail.Enabled() itself and responds 503 rather than panicking.
 // jobStore/fetcher may be nil (the on-demand scrape route responds 503
-// instead of panicking). Reply classification defaults to the
+// instead of panicking); so may letters (auto-apply runs then fail with a
+// clear "AI not configured" error). Reply classification defaults to the
 // dependency-free crm.KeywordClassifier; swapping in an LLM-backed one later
 // is a one-line change here.
-func NewCRMAPI(crmStore *crm.Store, idx *Index, gmailClient *gmail.Client, jobStore *store.Store, fetcher *source.Fetcher) *CRMAPI {
+func NewCRMAPI(crmStore *crm.Store, idx *Index, gmailClient *gmail.Client, jobStore *store.Store, fetcher *source.Fetcher, letters LetterWriter) *CRMAPI {
 	if gmailClient == nil {
 		gmailClient = gmail.New(gmail.Config{})
 	}
 	return &CRMAPI{
 		store: crmStore, idx: idx, gmail: gmailClient, classifier: crm.KeywordClassifier{},
-		jobStore: jobStore, fetcher: fetcher,
+		jobStore: jobStore, fetcher: fetcher, letters: letters,
 	}
 }
 
@@ -68,7 +80,6 @@ func (a *CRMAPI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/crm/specialties", a.listSpecialties)
 
 	a.registerVacancyRoutes(mux)
-	a.registerTemplateRoutes(mux)
 	a.registerApplicationRoutes(mux)
 	a.registerRunRoutes(mux)
 	a.registerAnalyticsRoutes(mux)

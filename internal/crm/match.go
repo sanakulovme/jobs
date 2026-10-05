@@ -229,14 +229,14 @@ func rejection(m Match, opts AutoApplyOptions, alreadySentForCandidate int) stri
 // calls it once per accepted match; the caller supplies the actual
 // send implementation (dry-run no-op, or a real internal/gmail send) so this
 // file has no dependency on internal/gmail.
-type ApplyFunc func(job model.Job, m Match, template LetterTemplate) (Application, error)
+type ApplyFunc func(job model.Job, m Match) (Application, error)
 
 // RunAutoApply walks vacancies best-first, matches each against candidates,
 // and calls apply for every match that clears every gate: no blockers, score
 // at or above opts.MinScore, an absolute German floor (if configured), and
 // both the per-run and per-candidate send caps. Mirrors the reference app's
 // AutoApplyService::run() exactly, including its early-exit conditions.
-func RunAutoApply(vacancies []model.Job, candidates []Candidate, applications []Application, templates []LetterTemplate, opts AutoApplyOptions, apply ApplyFunc) AutoApplyStats {
+func RunAutoApply(vacancies []model.Job, candidates []Candidate, applications []Application, opts AutoApplyOptions, apply ApplyFunc) AutoApplyStats {
 	// Details starts as []string{}, not nil: the same "nil slice marshals to
 	// JSON null and crashes a frontend .map()" trap documented on Match above.
 	stats := AutoApplyStats{Details: []string{}}
@@ -250,12 +250,6 @@ func RunAutoApply(vacancies []model.Job, candidates []Candidate, applications []
 		if job.ApplicationEmail == "" {
 			stats.NoEmail++
 			continue
-		}
-
-		template, ok := TemplateFor(templates, job)
-		if !ok {
-			stats.Details = append(stats.Details, "Xat shabloni topilmadi — to'xtatildi.")
-			break
 		}
 
 		for _, m := range MatchVacancy(candidates, applications, job) {
@@ -273,7 +267,7 @@ func RunAutoApply(vacancies []model.Job, candidates []Candidate, applications []
 				continue
 			}
 
-			app, err := apply(job, m, template)
+			app, err := apply(job, m)
 			if err != nil {
 				stats.Failed++
 				stats.Details = append(stats.Details, fmt.Sprintf("XATO: %s -> %s: %v", m.Candidate.FullName, job.Company, err))

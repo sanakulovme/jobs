@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"faangjobs/internal/ailetter"
 	"faangjobs/internal/crm"
 	"faangjobs/internal/gmail"
 	"faangjobs/internal/model"
@@ -48,6 +49,11 @@ type RunResult struct {
 // that" response rather than silently falling back to a dry run.
 var errGmailNotConfigured = fmt.Errorf("Gmail integratsiyasi sozlanmagan — hozircha faqat sinov rejimida (testMode: true) ishlaydi")
 
+// errLettersNotConfigured is returned by every auto-apply pass, test mode
+// included, when no AI key is configured: letters are written by Claude, so
+// without it there is nothing to preview or send.
+var errLettersNotConfigured = fmt.Errorf("AI xat yozuvchi sozlanmagan — serverda ANTHROPIC_API_KEY o'rnatilmagan")
+
 // runPipeline is the thin HTTP wrapper around RunAutoApply — see that method
 // for what an auto-apply pass actually does.
 func (a *CRMAPI) runPipeline(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +68,7 @@ func (a *CRMAPI) runPipeline(w http.ResponseWriter, r *http.Request) {
 
 	result, err := a.RunAutoApply(in.Count, in.TestMode)
 	if err != nil {
-		if errors.Is(err, errGmailNotConfigured) {
+		if errors.Is(err, errGmailNotConfigured) || errors.Is(err, errLettersNotConfigured) {
 			writeError(w, http.StatusNotImplemented, err.Error())
 			return
 		}
@@ -113,8 +119,11 @@ func (a *CRMAPI) RunAutoApply(count int, testMode bool) (RunResult, error) {
 // are "everything" — RunAutoApply above passes the whole board and every
 // candidate; crm_scrape.go's on-demand handler passes one freshly-scraped
 // batch of vacancies and a single candidate, reusing 100% of the same
-// scoring/blocker/template/dup-guard logic either way.
+// scoring/blocker/letter/dup-guard logic either way.
 func (a *CRMAPI) runAutoApplyOn(vacancies []model.Job, candidates []crm.Candidate, count int, testMode bool) (RunResult, error) {
+	if a.letters == nil {
+		return RunResult{}, errLettersNotConfigured
+	}
 	if !testMode && !a.gmail.Enabled() {
 		return RunResult{}, errGmailNotConfigured
 	}
@@ -128,22 +137,18 @@ func (a *CRMAPI) runAutoApplyOn(vacancies []model.Job, candidates []crm.Candidat
 	if err != nil {
 		return RunResult{}, err
 	}
-	templates, err := a.store.ListTemplates()
-	if err != nil {
-		return RunResult{}, err
-	}
-
 	started := time.Now().UTC()
 	drafts := []crm.Application{}
-	var apply func(job model.Job, m crm.Match, tmpl crm.LetterTemplate) (crm.Application, error)
+	var apply crm.ApplyFunc
 
 	if testMode {
-		// Dry run: rendered and reported, never persisted — matches the
-		// reference app's AutoApplyService, which returns before the DB
-		// insert when $dryRun is true. Nothing here counts against the
+		// Dry run: the letter is really written (so it can be reviewed) but
+		// only reported, never persisted or sent — matches the reference
+		// app's AutoApplyService, which returns before the DB insert when
+		// $dryRun is true. Nothing here counts against the
 		// duplicate-application guard until a real send actually happens.
-		apply = func(job model.Job, m crm.Match, tmpl crm.LetterTemplate) (crm.Application, error) {
-			subject, body, err := crm.RenderTemplate(tmpl, crm.ContextFor(job, m.Candidate))
+		apply = func(job model.Job, m crm.Match) (crm.Application, error) {
+			letter, err := a.writeLetter(context.Background(), job, m.Candidate, m.Profile)
 			if err != nil {
 				return crm.Application{}, err
 			}
@@ -154,8 +159,8 @@ func (a *CRMAPI) runAutoApplyOn(vacancies []model.Job, candidates []crm.Candidat
 			app := crm.Application{
 				VacancyID: job.ID, CandidateID: m.Candidate.ID, CandidateName: m.Candidate.FullName,
 				VacancyTitle: job.Title, Employer: job.Company,
-				ApplicationProfileID: m.Profile.ID, LetterTemplateID: tmpl.ID,
-				Status: crm.AppStatusDraft, Subject: subject, Body: body,
+				ApplicationProfileID: m.Profile.ID, Status: crm.AppStatusDraft,
+				Subject: letter.Subject, Body: letter.Body,
 				ToEmail: job.ApplicationEmail, FromEmail: fromEmail,
 				DocumentIDs: profileDocumentIDs(m.Profile),
 			}
@@ -173,7 +178,7 @@ func (a *CRMAPI) runAutoApplyOn(vacancies []model.Job, candidates []crm.Candidat
 		MinGermanLevel:  defaultMinGermanLevel,
 		DryRun:          testMode,
 	}
-	stats := crm.RunAutoApply(vacancies, candidates, applications, templates, opts, apply)
+	stats := crm.RunAutoApply(vacancies, candidates, applications, opts, apply)
 
 	run, err := a.store.CreateImportRun(crm.ImportRun{
 		Type:       "sources",
@@ -196,12 +201,12 @@ func (a *CRMAPI) runAutoApplyOn(vacancies []model.Job, candidates []crm.Candidat
 	return RunResult{Run: run, Stats: stats, Drafts: drafts}, nil
 }
 
-// realApply renders the letter, records a draft Application (so the
+// realApply has the letter written, records a draft Application (so the
 // duplicate-send guard covers it even if the send itself fails), sends it
 // through one of the candidate's Gmail mailboxes, and updates the record to
 // sent/failed. This is the ONLY code path in the whole CRM that talks to
 // Gmail's send endpoint.
-func (a *CRMAPI) realApply(job model.Job, m crm.Match, tmpl crm.LetterTemplate) (crm.Application, error) {
+func (a *CRMAPI) realApply(job model.Job, m crm.Match) (crm.Application, error) {
 	ctx := context.Background()
 
 	// Re-fetch rather than trust m.Candidate: within one run, several jobs
@@ -218,16 +223,17 @@ func (a *CRMAPI) realApply(job model.Job, m crm.Match, tmpl crm.LetterTemplate) 
 		return crm.Application{}, fmt.Errorf("kandidatning barcha Gmail hisoblari kunlik limitga yetgan yoki ulanmagan")
 	}
 
-	subject, body, err := crm.RenderTemplate(tmpl, crm.ContextFor(job, candidate))
+	letter, err := a.writeLetter(ctx, job, candidate, m.Profile)
 	if err != nil {
 		return crm.Application{}, err
 	}
+	subject, body := letter.Subject, letter.Body
 
 	app, err := a.store.CreateApplication(crm.Application{
 		VacancyID: job.ID, CandidateID: candidate.ID, CandidateName: candidate.FullName,
 		VacancyTitle: job.Title, Employer: job.Company,
-		ApplicationProfileID: m.Profile.ID, LetterTemplateID: tmpl.ID,
-		Status: crm.AppStatusDraft, Subject: subject, Body: body,
+		ApplicationProfileID: m.Profile.ID, Status: crm.AppStatusDraft,
+		Subject: subject, Body: body,
 		ToEmail: job.ApplicationEmail, FromEmail: mailbox.Email,
 		DocumentIDs: profileDocumentIDs(m.Profile),
 		AutoSent:    true,
@@ -260,6 +266,38 @@ func (a *CRMAPI) realApply(job model.Job, m crm.Match, tmpl crm.LetterTemplate) 
 		return crm.Application{}, err
 	}
 	return updated, nil
+}
+
+// writeLetter has the AI write one application e-mail. The board's index
+// keeps only slim jobs (no description), so the full posting is re-read
+// first; the profile's CV is passed along for the model to read.
+func (a *CRMAPI) writeLetter(ctx context.Context, job model.Job, candidate crm.Candidate, profile crm.ApplicationProfile) (ailetter.Letter, error) {
+	if full, ok := a.idx.JobByID(job.ID); ok {
+		job = full
+	}
+	in := ailetter.Input{Job: job, Candidate: candidate, Profile: profile}
+	if doc, ok := candidate.Document(profile.CVDocumentID); ok && profile.CVDocumentID != "" {
+		data, err := a.readUpload(doc)
+		if err != nil {
+			return ailetter.Letter{}, err
+		}
+		in.CV = &ailetter.Document{Filename: doc.OriginalFilename, ContentType: doc.ContentType, Data: data}
+	}
+	return a.letters.Write(ctx, in)
+}
+
+// readUpload returns the contents of one of a candidate's uploaded documents.
+func (a *CRMAPI) readUpload(doc crm.Document) ([]byte, error) {
+	f, err := a.store.OpenUpload(doc.StoredPath)
+	if err != nil {
+		return nil, fmt.Errorf("hujjatni ochib bo'lmadi (%s): %w", doc.OriginalFilename, err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("hujjatni o'qib bo'lmadi (%s): %w", doc.OriginalFilename, err)
+	}
+	return data, nil
 }
 
 // sendApplication resolves a fresh access token for the chosen mailbox and
@@ -295,14 +333,9 @@ func (a *CRMAPI) profileAttachments(candidate crm.Candidate, profile crm.Applica
 		if !ok {
 			continue
 		}
-		f, err := a.store.OpenUpload(doc.StoredPath)
+		data, err := a.readUpload(doc)
 		if err != nil {
-			return nil, fmt.Errorf("hujjatni ochib bo'lmadi (%s): %w", doc.OriginalFilename, err)
-		}
-		data, err := io.ReadAll(f)
-		f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("hujjatni o'qib bo'lmadi (%s): %w", doc.OriginalFilename, err)
+			return nil, err
 		}
 		out = append(out, gmail.Attachment{Filename: doc.OriginalFilename, ContentType: doc.ContentType, Data: data})
 	}

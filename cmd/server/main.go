@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"faangjobs/internal/ailetter"
 	"faangjobs/internal/crm"
 	"faangjobs/internal/dataset"
 	"faangjobs/internal/gmail"
@@ -108,6 +109,10 @@ func main() {
 		googleClientID     = flag.String("google-client-id", envOr("FAANGJOBS_GOOGLE_CLIENT_ID", ""), "Google OAuth client ID (empty = Gmail integration disabled)")
 		googleClientSecret = flag.String("google-client-secret", envOr("FAANGJOBS_GOOGLE_CLIENT_SECRET", ""), "Google OAuth client secret")
 		googleRedirectURL  = flag.String("google-redirect-url", envOr("FAANGJOBS_GOOGLE_REDIRECT_URL", ""), "OAuth redirect URI; must match Google Cloud Console exactly (e.g. http://localhost:8080/api/crm/gmail/callback)")
+
+		// Claude API key for writing application letters (internal/ailetter).
+		// Without it auto-apply can't run, not even in test mode.
+		anthropicKey = flag.String("anthropic-api-key", envOr("ANTHROPIC_API_KEY", ""), "Claude API key used to write application letters (empty = auto-apply disabled)")
 	)
 	flag.Parse()
 
@@ -163,6 +168,14 @@ func main() {
 		idx.StartAutoReload(*reload, stopReload)
 	}
 
+	var letters httpapi.LetterWriter
+	if *anthropicKey != "" {
+		letters = ailetter.New(*anthropicKey)
+		logger.Printf("AI letter writer enabled (model %s)", ailetter.Model)
+	} else {
+		logger.Printf("AI letter writer disabled (no ANTHROPIC_API_KEY) — auto-apply will refuse to run")
+	}
+
 	handler, err := httpapi.Handler(idx, httpapi.Config{
 		WebDir:    *webDir,
 		JWTSecret: *jwtSecret,
@@ -172,6 +185,7 @@ func main() {
 		CRM:       crmStore,
 		JobStore:  st,
 		Fetcher:   fetcher,
+		Letters:   letters,
 		Gmail: gmail.Config{
 			ClientID:     *googleClientID,
 			ClientSecret: *googleClientSecret,

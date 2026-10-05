@@ -42,7 +42,10 @@ type Config struct {
 	// Gmail route responds 503 rather than being unreachable, so the
 	// frontend can show a clear "not configured" state instead of a 404.
 	Gmail gmail.Config
-	Log   func(format string, args ...any)
+	// Letters writes each application e-mail (Claude, see internal/ailetter).
+	// Nil leaves auto-apply unable to run, with a clear error.
+	Letters LetterWriter
+	Log     func(format string, args ...any)
 }
 
 // Handler builds the complete HTTP handler: JSON API + embedded SPA, wrapped
@@ -55,7 +58,7 @@ func Handler(idx *Index, cfg Config) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	NewAPI(idx).Register(mux)
-	NewCRMAPI(cfg.CRM, idx, gmail.New(cfg.Gmail), cfg.JobStore, cfg.Fetcher).Register(mux)
+	NewCRMAPI(cfg.CRM, idx, gmail.New(cfg.Gmail), cfg.JobStore, cfg.Fetcher, cfg.Letters).Register(mux)
 	if cfg.Gmail.Enabled() {
 		log("Gmail integration enabled (redirect: %s)", cfg.Gmail.RedirectURL)
 	} else {

@@ -110,12 +110,11 @@ func TestRunAutoApplyRespectsMinScoreAndCaps(t *testing.T) {
 	// matches" (140) rather than from "blocked".
 	weak := fullCandidate("weak", "mfa")                    // 1 specialty -> 100
 	strong := fullCandidate("strong", "mfa", "kardiologie") // 2 specialties -> 140
-	templates := []LetterTemplate{{ID: "t1", Subject: "S", Body: "B", IsDefault: true}}
 
 	var applied []string
-	stats := RunAutoApply([]model.Job{job}, []Candidate{weak, strong}, nil, templates,
+	stats := RunAutoApply([]model.Job{job}, []Candidate{weak, strong}, nil,
 		AutoApplyOptions{MaxPerRun: 20, MaxPerCandidate: 5, MinScore: 120, DryRun: true},
-		func(job model.Job, m Match, tmpl LetterTemplate) (Application, error) {
+		func(job model.Job, m Match) (Application, error) {
 			applied = append(applied, m.Candidate.ID)
 			return Application{ID: "app-" + m.Candidate.ID, CandidateID: m.Candidate.ID, VacancyID: job.ID, Status: AppStatusSent}, nil
 		})
@@ -132,12 +131,11 @@ func TestRunAutoApplyStopsAtMaxPerRun(t *testing.T) {
 	job1 := model.Job{ID: "j1", ApplicationEmail: "a@x.de", Specialties: []string{"mfa"}}
 	job2 := model.Job{ID: "j2", ApplicationEmail: "b@x.de", Specialties: []string{"mfa"}}
 	c := fullCandidate("c1", "mfa")
-	templates := []LetterTemplate{{ID: "t1", IsDefault: true}}
 
 	sentCount := 0
-	stats := RunAutoApply([]model.Job{job1, job2}, []Candidate{c}, nil, templates,
+	stats := RunAutoApply([]model.Job{job1, job2}, []Candidate{c}, nil,
 		AutoApplyOptions{MaxPerRun: 0, MaxPerCandidate: 5, MinScore: 0},
-		func(job model.Job, m Match, tmpl LetterTemplate) (Application, error) {
+		func(job model.Job, m Match) (Application, error) {
 			sentCount++
 			return Application{}, nil
 		})
@@ -153,8 +151,8 @@ func TestRunAutoApplyStopsAtMaxPerRun(t *testing.T) {
 // Every slice field returned straight from these functions must be
 // non-nil even in the "found nothing" case.
 func TestNoNilSlicesInJSONResponses(t *testing.T) {
-	stats := RunAutoApply(nil, nil, nil, nil, AutoApplyOptions{},
-		func(model.Job, Match, LetterTemplate) (Application, error) { return Application{}, nil })
+	stats := RunAutoApply(nil, nil, nil, AutoApplyOptions{},
+		func(model.Job, Match) (Application, error) { return Application{}, nil })
 	if stats.Details == nil {
 		t.Error("AutoApplyStats.Details is nil, wants []string{}")
 	}
@@ -177,11 +175,10 @@ func TestNoNilSlicesInJSONResponses(t *testing.T) {
 func TestRunAutoApplyPropagatesApplyError(t *testing.T) {
 	job := model.Job{ID: "j1", ApplicationEmail: "a@x.de", Specialties: []string{"mfa"}}
 	c := fullCandidate("c1", "mfa")
-	templates := []LetterTemplate{{ID: "t1", IsDefault: true}}
 
-	stats := RunAutoApply([]model.Job{job}, []Candidate{c}, nil, templates,
+	stats := RunAutoApply([]model.Job{job}, []Candidate{c}, nil,
 		AutoApplyOptions{MaxPerRun: 5, MaxPerCandidate: 5, MinScore: 0},
-		func(job model.Job, m Match, tmpl LetterTemplate) (Application, error) {
+		func(job model.Job, m Match) (Application, error) {
 			return Application{}, errors.New("gmail send failed")
 		})
 

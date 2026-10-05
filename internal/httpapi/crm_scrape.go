@@ -118,7 +118,7 @@ func (a *CRMAPI) scrapeCandidate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := a.runAutoApplyOn(scoped, []crm.Candidate{candidate}, in.Count, in.TestMode)
 	if err != nil {
-		if errors.Is(err, errGmailNotConfigured) {
+		if errors.Is(err, errGmailNotConfigured) || errors.Is(err, errLettersNotConfigured) {
 			writeError(w, http.StatusNotImplemented, err.Error())
 			return
 		}
