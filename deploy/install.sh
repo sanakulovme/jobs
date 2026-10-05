@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# One-time provisioning of a fresh Ubuntu (22.04 / 24.04) VPS for FaangJobs:
+# One-time provisioning of an Ubuntu (22.04 / 24.04) VPS for FaangJobs:
 # Go toolchain, a dedicated system user, the app under /opt/faangjobs, a
-# hardened systemd service, Caddy (automatic HTTPS + basic auth), a firewall
-# and nightly backups. Safe to re-run: every step checks what's already there.
+# hardened systemd service, a reverse proxy with HTTPS + basic auth, a
+# firewall and nightly backups. Safe to re-run: every step checks what's
+# already there.
+#
+# Reverse proxy: if nginx is already running (a server shared with other
+# sites), a FaangJobs server block is added next to them and certbot gets the
+# certificate — other sites are left untouched. Otherwise Caddy is installed.
+# Force one with PROXY=nginx|caddy.
 #
 # Usage (as root, on the VPS):
 #   curl -fsSL https://raw.githubusercontent.com/sanakulovme/jobs/main/deploy/install.sh -o install.sh
 #   sudo DOMAIN=crm.example.com bash install.sh
 #
 # Optional env: REPO_URL, BRANCH (default main), BASIC_USER (default admin),
-# BASIC_PASSWORD (default: generated and printed once), ENABLE_UFW (default 1).
+# BASIC_PASSWORD (default: generated and printed once), ENABLE_UFW (default 1),
+# PROXY (default auto).
 set -euo pipefail
 
 DOMAIN="${DOMAIN:?set DOMAIN, e.g. DOMAIN=crm.example.com (its A record must already point at this server)}"
@@ -18,11 +25,14 @@ BRANCH="${BRANCH:-main}"
 BASIC_USER="${BASIC_USER:-admin}"
 BASIC_PASSWORD="${BASIC_PASSWORD:-}"
 ENABLE_UFW="${ENABLE_UFW:-1}"
+PROXY="${PROXY:-auto}"
 
 APP_DIR=/opt/faangjobs
 APP_USER=faangjobs
 APP_HOME=/var/lib/faangjobs
 GO_ROOT=/usr/local/go
+NGINX_SITE=/etc/nginx/sites-available/faangjobs
+HTPASSWD=/etc/nginx/faangjobs.htpasswd
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -33,14 +43,22 @@ version_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" 
 [[ $EUID -eq 0 ]] || die "run as root (sudo)"
 grep -qi ubuntu /etc/os-release || echo "warning: not Ubuntu — continuing, but only Ubuntu is tested"
 
+if [[ "$PROXY" == auto ]]; then
+	if systemctl is-active --quiet nginx; then PROXY=nginx; else PROXY=caddy; fi
+fi
+[[ "$PROXY" == nginx || "$PROXY" == caddy ]] || die "PROXY must be nginx or caddy"
+
 log "System packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git curl ca-certificates gnupg ufw openssl \
-	debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y git curl ca-certificates gnupg ufw openssl
 
-log "Caddy (reverse proxy + automatic Let's Encrypt)"
-if ! command -v caddy >/dev/null; then
+if [[ "$PROXY" == nginx ]]; then
+	log "Reverse proxy: existing nginx + certbot"
+	command -v certbot >/dev/null || apt-get install -y certbot python3-certbot-nginx
+elif ! command -v caddy >/dev/null; then
+	log "Reverse proxy: Caddy (automatic Let's Encrypt)"
+	apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
 	curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' |
 		gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 	curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
@@ -92,25 +110,63 @@ log "Build + systemd service"
 SKIP_PULL=1 bash "$APP_DIR/deploy/update.sh"
 systemctl enable faangjobs >/dev/null
 
-log "Caddy config for $DOMAIN"
-if [[ -n "$BASIC_PASSWORD" ]] || ! grep -q "^${DOMAIN} {" /etc/caddy/Caddyfile 2>/dev/null; then
-	GENERATED=0
+# The basic-auth login is (re)generated only on first setup or when
+# BASIC_PASSWORD is passed explicitly.
+if [[ "$PROXY" == nginx ]]; then
+	configured() { [[ -f "$HTPASSWD" ]]; }
+else
+	configured() { grep -q "^${DOMAIN} {" /etc/caddy/Caddyfile 2>/dev/null; }
+fi
+GENERATED=0
+NEW_LOGIN=0
+if [[ -n "$BASIC_PASSWORD" ]] || ! configured; then
+	NEW_LOGIN=1
 	if [[ -z "$BASIC_PASSWORD" ]]; then
 		BASIC_PASSWORD="$(openssl rand -base64 18 | tr -d '/+=')"
 		GENERATED=1
 	fi
-	HASH="$(caddy hash-password --plaintext "$BASIC_PASSWORD")"
-	sed -e "s|__DOMAIN__|${DOMAIN}|g" \
-		-e "s|__BASIC_USER__|${BASIC_USER}|g" \
-		-e "s|__BASIC_HASH__|${HASH}|g" \
-		"$APP_DIR/deploy/Caddyfile.template" >/etc/caddy/Caddyfile
-	caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-	systemctl reload caddy || systemctl restart caddy
-	if [[ $GENERATED == 1 ]]; then
-		printf '\n\033[1;33mCRM login (shown ONCE — save it now):\n  user: %s\n  pass: %s\033[0m\n' "$BASIC_USER" "$BASIC_PASSWORD"
+fi
+
+if [[ "$PROXY" == nginx ]]; then
+	log "nginx site for $DOMAIN"
+	if [[ $NEW_LOGIN == 1 ]]; then
+		printf '%s:%s\n' "$BASIC_USER" "$(openssl passwd -apr1 "$BASIC_PASSWORD")" >"$HTPASSWD"
+		chown root:www-data "$HTPASSWD"
+		chmod 640 "$HTPASSWD"
+	fi
+	# Only (re)write the site before certbot has added its TLS lines to it,
+	# so a re-run never strips the certificate config.
+	install -m 644 "$APP_DIR/deploy/nginx-proxy.conf" /etc/nginx/faangjobs-proxy.conf
+	if ! grep -q "managed by Certbot" "$NGINX_SITE" 2>/dev/null; then
+		sed -e "s|__DOMAIN__|${DOMAIN}|g" -e "s|__HTPASSWD__|${HTPASSWD}|g" \
+			"$APP_DIR/deploy/nginx.conf.template" >"$NGINX_SITE"
+		ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/faangjobs
+	fi
+	# nginx is shared with other sites: never leave a config that breaks it.
+	if ! nginx -t; then
+		rm -f /etc/nginx/sites-enabled/faangjobs
+		die "nginx config test failed — faangjobs site disabled, other sites untouched"
+	fi
+	systemctl reload nginx
+	if [[ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
+		certbot --nginx -d "$DOMAIN" --non-interactive --redirect
 	fi
 else
-	echo "Caddyfile already configured for $DOMAIN — left untouched (pass BASIC_PASSWORD=... to reset the login)"
+	log "Caddy config for $DOMAIN"
+	if [[ $NEW_LOGIN == 1 ]]; then
+		HASH="$(caddy hash-password --plaintext "$BASIC_PASSWORD")"
+		sed -e "s|__DOMAIN__|${DOMAIN}|g" \
+			-e "s|__BASIC_USER__|${BASIC_USER}|g" \
+			-e "s|__BASIC_HASH__|${HASH}|g" \
+			"$APP_DIR/deploy/Caddyfile.template" >/etc/caddy/Caddyfile
+		caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+		systemctl reload caddy || systemctl restart caddy
+	else
+		echo "Caddyfile already configured for $DOMAIN — left untouched (pass BASIC_PASSWORD=... to reset the login)"
+	fi
+fi
+if [[ $GENERATED == 1 ]]; then
+	printf '\n\033[1;33mCRM login (shown ONCE — save it now):\n  user: %s\n  pass: %s\033[0m\n' "$BASIC_USER" "$BASIC_PASSWORD"
 fi
 
 if [[ "$ENABLE_UFW" == 1 ]]; then

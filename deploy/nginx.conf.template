@@ -1,0 +1,41 @@
+# Rendered into /etc/nginx/sites-available/faangjobs by deploy/install.sh
+# when the server already runs nginx (__DOMAIN__ / __HTPASSWD__ substituted
+# there). certbot --nginx then adds the TLS listener and http->https redirect.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    # CV uploads are capped at 20 MiB by the app; leave a little headroom.
+    client_max_body_size 25m;
+
+    # Everything (job board, CRM, candidate PII, CV uploads) sits behind
+    # HTTP basic auth — the app itself has no login of its own.
+    auth_basic "FaangJobs CRM";
+    auth_basic_user_file __HTPASSWD__;
+
+    location / {
+        include /etc/nginx/faangjobs-proxy.conf;
+    }
+
+    # EXCEPT the paths a *candidate* opens from a shared link (Gmail connect
+    # + Google's OAuth redirect back to us) and the health check; those are
+    # guarded by one-time tokens / OAuth state, not by the CRM password.
+    location /gmail-connect/ {
+        auth_basic off;
+        include /etc/nginx/faangjobs-proxy.conf;
+    }
+    location = /api/crm/gmail/callback {
+        auth_basic off;
+        include /etc/nginx/faangjobs-proxy.conf;
+    }
+    location = /healthz {
+        auth_basic off;
+        include /etc/nginx/faangjobs-proxy.conf;
+    }
+    location = /api/healthz {
+        auth_basic off;
+        include /etc/nginx/faangjobs-proxy.conf;
+    }
+}
