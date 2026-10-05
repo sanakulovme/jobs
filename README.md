@@ -238,11 +238,12 @@ The `deploy/` folder automates the whole setup:
 
 | File | What it does |
 |------|--------------|
-| `deploy/install.sh` | One-time provisioning: Go (official tarball — Ubuntu's `golang-go` is older than `go.mod` requires), `faangjobs` system user, clone into `/opt/faangjobs`, build, systemd service, Caddy (HTTPS + basic auth), ufw firewall, nightly backups. Idempotent — safe to re-run. |
+| `deploy/install.sh` | One-time provisioning: Go (official tarball — Ubuntu's `golang-go` is older than `go.mod` requires), `faangjobs` system user, clone into `/opt/faangjobs`, build, systemd service, HTTPS + basic auth (reuses an already-running nginx + certbot on a shared server, otherwise installs Caddy), ufw firewall, nightly backups. Idempotent — safe to re-run. |
 | `deploy/update.sh` | `git pull --ff-only` → build to `*.new` → swap → restart → wait for `/healthz`. A failed build never touches the running server. |
 | `deploy/backup.sh` | Tars `data/` (CRM, CVs, Gmail tokens, scrape pools) into `/var/backups/faangjobs`, keeps 14 days. Run nightly by cron. |
 | `deploy/faangjobs.service` | Hardened systemd unit; listens on `127.0.0.1:8080` only, may write only to `data/`. |
 | `deploy/Caddyfile.template` | TLS via Let's Encrypt, basic auth in front of everything except the candidate-facing Gmail-connect paths and `/healthz`. |
+| `deploy/nginx.conf.template`, `deploy/nginx-proxy.conf` | Same split for servers that already run nginx (certbot adds TLS). |
 
 ### 1. Before you start
 
