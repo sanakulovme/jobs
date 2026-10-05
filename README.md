@@ -224,16 +224,23 @@ genuinely new postings, and hit "Scrape". That one action:
 
 ### AI-written application letters
 
-There are no letter templates. Every application e-mail is written by
-Claude (`claude-opus-5-5`, `internal/ailetter`) from that one vacancy (full
-description included) and that one candidate: their CRM record, the matched
-profile's specialties/experience and, when it is a PDF, their CV. The letter
-is German, formal, 150–250 words, and may only use facts from the CV/profile.
-Test mode writes the letters too (so they can be reviewed) but never sends.
+There are no letter templates. Every application e-mail is written by an
+LLM (`internal/ailetter`) from that one vacancy (full description included)
+and that one candidate: their CRM record, the matched profile's
+specialties/experience and, when it is a PDF, their CV. The letter is German,
+formal, 150–250 words, and may only use facts from the CV/profile. Test mode
+writes the letters too (so they can be reviewed) but never sends.
 
-Set `ANTHROPIC_API_KEY` in `.env`; without it every auto-apply run (test mode
-included) is refused with a clear error. Each letter is one API call, so a
-run of N letters takes roughly N × 10–30 s.
+Two interchangeable backends share the same prompt:
+
+| Backend | `.env` | CV handling |
+|---------|--------|-------------|
+| Groq (`openai/gpt-oss-120b`, override with `GROQ_MODEL`) | `GROQ_API_KEY` | PDF → text via `pdftotext` (poppler-utils, installed by `install.sh`); scanned PDFs without a text layer fall back to profile data |
+| Claude (`claude-opus-5-5`) | `ANTHROPIC_API_KEY` | reads the PDF directly |
+
+With one key set, that backend is used; with both, `FAANGJOBS_LETTER_AI=groq|claude`
+picks (Groq by default). With none, every auto-apply run (test mode included)
+is refused with a clear error. Each letter is one API call made in sequence.
 
 The registry (`internal/registry/companies.json`) is still scoped to
 MFA/Germany, and standalone `./bin/crawler` still works exactly as before

@@ -1,30 +1,20 @@
-// Package ailetter writes each application e-mail with Claude instead of a
+// Package ailetter writes each application e-mail with an LLM instead of a
 // hand-maintained letter template: the model reads the vacancy (full
 // description included) and the candidate — their CRM record, matched
-// profile and, when it is a PDF, their CV — and writes a German cover e-mail
-// tailored to that one posting.
+// profile and CV — and writes a German cover e-mail tailored to that one
+// posting. Two backends share one prompt: Groq (groq.go) and Claude
+// (claude.go).
 package ailetter
 
 import (
-	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
-
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/anthropics/anthropic-sdk-go/packages/param"
-	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 
 	"faangjobs/internal/crm"
 	"faangjobs/internal/model"
 )
-
-// Model is the Claude model every letter is written with.
-const Model = "claude-opus-5-5"
 
 // maxCVBytes keeps a pathological upload from blowing the 32 MB request cap
 // (base64 inflates by a third); real CVs are a few hundred KB.
@@ -49,21 +39,6 @@ type Input struct {
 type Letter struct {
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
-}
-
-// Writer writes letters through the Claude API.
-type Writer struct {
-	client anthropic.Client
-}
-
-// New returns a Writer authenticated with apiKey. Extra options (a test
-// server's base URL, say) are applied after the defaults.
-func New(apiKey string, opts ...option.RequestOption) *Writer {
-	opts = append([]option.RequestOption{
-		option.WithAPIKey(apiKey),
-		option.WithRequestTimeout(3 * time.Minute),
-	}, opts...)
-	return &Writer{client: anthropic.NewClient(opts...)}
 }
 
 const systemPrompt = `You write job application e-mails for a recruiting agency that places candidates (mostly from Uzbekistan and Central Asia) into jobs, apprenticeships and programs in Germany. Each e-mail is sent from the candidate's own Gmail account to the employer, with the candidate's CV and other documents attached.
@@ -91,62 +66,10 @@ var letterSchema = map[string]any{
 	"additionalProperties": false,
 }
 
-// Write produces the subject and body for one application.
-func (w *Writer) Write(ctx context.Context, in Input) (Letter, error) {
-	var content []anthropic.BetaContentBlockParamUnion
-
-	// The CV comes first and carries the cache breakpoint: one run usually
-	// writes several letters for the same candidate, and every one after the
-	// first then reads the system prompt + CV from cache.
-	cvNote := "No CV is attached; rely on the profile data only."
-	if cv := in.CV; cv != nil && isPDF(cv) && len(cv.Data) <= maxCVBytes {
-		doc := anthropic.NewBetaDocumentBlock(anthropic.BetaBase64PDFSourceParam{
-			Data: base64.StdEncoding.EncodeToString(cv.Data),
-		})
-		doc.OfDocument.Title = param.NewOpt("CV: " + cv.Filename)
-		doc.OfDocument.CacheControl = anthropic.NewBetaCacheControlEphemeralParam()
-		content = append(content, doc)
-		cvNote = "The candidate's CV is the attached document."
-	} else if in.CV != nil {
-		cvNote = fmt.Sprintf("The CV (%s) is attached to the e-mail but is not a PDF, so you cannot read it; rely on the profile data only.", in.CV.Filename)
-	}
-	content = append(content, anthropic.NewBetaTextBlock(cvNote+"\n\n"+describe(in)))
-
-	resp, err := w.client.Beta.Messages.New(ctx, anthropic.BetaMessageNewParams{
-		Model:     Model,
-		MaxTokens: 16000,
-		System: []anthropic.BetaTextBlockParam{{
-			Text:         systemPrompt,
-			CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
-		}},
-		Messages: []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(content...)},
-		OutputConfig: anthropic.BetaOutputConfigParam{
-			Effort: anthropic.BetaOutputConfigEffortMedium,
-			Format: anthropic.BetaJSONOutputFormatParam{Schema: letterSchema},
-		},
-		// If a safety classifier declines the request, the API re-serves it
-		// on a suitable fallback model inside the same call.
-		Fallbacks: anthropic.BetaFallbacksParamUnion{OfDefault: constant.ValueOf[constant.Default]()},
-		Betas:     []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01},
-	})
-	if err != nil {
-		return Letter{}, fmt.Errorf("AI xat yozolmadi: %w", err)
-	}
-	switch resp.StopReason {
-	case anthropic.BetaStopReasonRefusal:
-		return Letter{}, errors.New("AI bu xatni yozishni rad etdi")
-	case anthropic.BetaStopReasonMaxTokens:
-		return Letter{}, errors.New("AI javobi chegaraga yetib kesildi")
-	}
-
-	var text strings.Builder
-	for _, block := range resp.Content {
-		if t, ok := block.AsAny().(anthropic.BetaTextBlock); ok {
-			text.WriteString(t.Text)
-		}
-	}
+// parseLetter decodes the model's JSON reply and rejects an empty letter.
+func parseLetter(text string) (Letter, error) {
 	var letter Letter
-	if err := json.Unmarshal([]byte(text.String()), &letter); err != nil {
+	if err := json.Unmarshal([]byte(text), &letter); err != nil {
 		return Letter{}, fmt.Errorf("AI javobini o'qib bo'lmadi: %w", err)
 	}
 	letter.Subject = strings.TrimSpace(letter.Subject)

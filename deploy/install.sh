@@ -51,7 +51,7 @@ fi
 log "System packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git curl ca-certificates gnupg ufw openssl
+apt-get install -y git curl ca-certificates gnupg ufw openssl \n	poppler-utils # pdftotext: CV text for the Groq letter writer
 
 if [[ "$PROXY" == nginx ]]; then
 	log "Reverse proxy: existing nginx + certbot"

@@ -52,7 +52,7 @@ var errGmailNotConfigured = fmt.Errorf("Gmail integratsiyasi sozlanmagan — hoz
 // errLettersNotConfigured is returned by every auto-apply pass, test mode
 // included, when no AI key is configured: letters are written by Claude, so
 // without it there is nothing to preview or send.
-var errLettersNotConfigured = fmt.Errorf("AI xat yozuvchi sozlanmagan — serverda ANTHROPIC_API_KEY o'rnatilmagan")
+var errLettersNotConfigured = fmt.Errorf("AI xat yozuvchi sozlanmagan — serverda GROQ_API_KEY yoki ANTHROPIC_API_KEY o'rnatilmagan")
 
 // runPipeline is the thin HTTP wrapper around RunAutoApply — see that method
 // for what an auto-apply pass actually does.

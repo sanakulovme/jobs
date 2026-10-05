@@ -26,7 +26,7 @@ func fakeAPI(t *testing.T, stopReason, text string, got *map[string]any) *httpte
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"id": "msg_1", "type": "message", "role": "assistant", "model": Model,
+			"id": "msg_1", "type": "message", "role": "assistant", "model": ClaudeModel,
 			"stop_reason": stopReason,
 			"content":     []map[string]any{{"type": "text", "text": text}},
 			"usage":       map[string]any{"input_tokens": 10, "output_tokens": 10},
@@ -49,10 +49,10 @@ func testInput(cv *Document) Input {
 	}
 }
 
-func TestWriteBuildsRequestAndParsesLetter(t *testing.T) {
+func TestClaudeWriteBuildsRequestAndParsesLetter(t *testing.T) {
 	var req map[string]any
 	srv := fakeAPI(t, "end_turn", `{"subject":" Bewerbung als MFA – Dilnoza Karimova ","body":"Sehr geehrte Frau Weber,\n..."}`, &req)
-	w := New("test-key", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	w := NewClaude("test-key", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 
 	letter, err := w.Write(context.Background(), testInput(&Document{Filename: "cv.pdf", ContentType: "application/pdf", Data: []byte("%PDF-1.4")}))
 	if err != nil {
@@ -62,7 +62,7 @@ func TestWriteBuildsRequestAndParsesLetter(t *testing.T) {
 		t.Errorf("letter = %+v", letter)
 	}
 
-	if req["model"] != Model {
+	if req["model"] != ClaudeModel {
 		t.Errorf("model = %v", req["model"])
 	}
 	if req["fallbacks"] != "default" {
@@ -85,10 +85,10 @@ func TestWriteBuildsRequestAndParsesLetter(t *testing.T) {
 	}
 }
 
-func TestWriteSkipsNonPDFCV(t *testing.T) {
+func TestClaudeWriteSkipsNonPDFCV(t *testing.T) {
 	var req map[string]any
 	srv := fakeAPI(t, "end_turn", `{"subject":"S","body":"B"}`, &req)
-	w := New("test-key", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	w := NewClaude("test-key", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 
 	if _, err := w.Write(context.Background(), testInput(&Document{Filename: "cv.docx", ContentType: "application/msword", Data: []byte("x")})); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -99,10 +99,10 @@ func TestWriteSkipsNonPDFCV(t *testing.T) {
 	}
 }
 
-func TestWriteReportsRefusal(t *testing.T) {
+func TestClaudeWriteReportsRefusal(t *testing.T) {
 	var req map[string]any
 	srv := fakeAPI(t, "refusal", "", &req)
-	w := New("test-key", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	w := NewClaude("test-key", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 	if _, err := w.Write(context.Background(), testInput(nil)); err == nil {
 		t.Fatal("expected an error for a refusal")
 	}

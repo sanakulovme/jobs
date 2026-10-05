@@ -110,9 +110,12 @@ func main() {
 		googleClientSecret = flag.String("google-client-secret", envOr("FAANGJOBS_GOOGLE_CLIENT_SECRET", ""), "Google OAuth client secret")
 		googleRedirectURL  = flag.String("google-redirect-url", envOr("FAANGJOBS_GOOGLE_REDIRECT_URL", ""), "OAuth redirect URI; must match Google Cloud Console exactly (e.g. http://localhost:8080/api/crm/gmail/callback)")
 
-		// Claude API key for writing application letters (internal/ailetter).
-		// Without it auto-apply can't run, not even in test mode.
-		anthropicKey = flag.String("anthropic-api-key", envOr("ANTHROPIC_API_KEY", ""), "Claude API key used to write application letters (empty = auto-apply disabled)")
+		// AI that writes application letters (internal/ailetter). Without any
+		// key auto-apply can't run, not even in test mode.
+		letterAI     = flag.String("letter-ai", envOr("FAANGJOBS_LETTER_AI", ""), "letter-writing AI: groq or claude (empty = whichever has a key, Groq first)")
+		groqKey      = flag.String("groq-api-key", envOr("GROQ_API_KEY", ""), "Groq API key for writing application letters")
+		groqModel    = flag.String("groq-model", envOr("GROQ_MODEL", ""), "Groq model for letters (default "+ailetter.DefaultGroqModel+")")
+		anthropicKey = flag.String("anthropic-api-key", envOr("ANTHROPIC_API_KEY", ""), "Claude API key for writing application letters")
 	)
 	flag.Parse()
 
@@ -168,12 +171,26 @@ func main() {
 		idx.StartAutoReload(*reload, stopReload)
 	}
 
+	provider := *letterAI
+	if provider == "" {
+		switch {
+		case *groqKey != "":
+			provider = "groq"
+		case *anthropicKey != "":
+			provider = "claude"
+		}
+	}
 	var letters httpapi.LetterWriter
-	if *anthropicKey != "" {
-		letters = ailetter.New(*anthropicKey)
-		logger.Printf("AI letter writer enabled (model %s)", ailetter.Model)
-	} else {
-		logger.Printf("AI letter writer disabled (no ANTHROPIC_API_KEY) — auto-apply will refuse to run")
+	switch {
+	case provider == "groq" && *groqKey != "":
+		g := ailetter.NewGroq(*groqKey, *groqModel)
+		letters = g
+		logger.Printf("AI letter writer: Groq (model %s)", g.Model())
+	case provider == "claude" && *anthropicKey != "":
+		letters = ailetter.NewClaude(*anthropicKey)
+		logger.Printf("AI letter writer: Claude (model %s)", ailetter.ClaudeModel)
+	default:
+		logger.Printf("AI letter writer disabled (no GROQ_API_KEY / ANTHROPIC_API_KEY for %q) — auto-apply will refuse to run", provider)
 	}
 
 	handler, err := httpapi.Handler(idx, httpapi.Config{
