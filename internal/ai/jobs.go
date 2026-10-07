@@ -32,7 +32,8 @@ Rules:
 - title: the posting's title as written. employer: the hiring organisation if shown (else empty). location: city/region as written.
 - url: the link that opens this posting's own page, copied exactly from a [link: ...] marker. Empty if there is none.
 - applicationEmail: an e-mail address the page gives for applying to this posting. Never a generic privacy/support/noreply address, and never one you made up. Empty if none is shown.
-- summary: one to three sentences in the page's language, taken from what the page says about the posting. Empty if the page shows only the title.
+- summary: at most two short sentences in the page's language, taken from what the page says about the posting. Empty if the page shows only the title.
+- List at most 40 postings, in page order. A posting linked twice (title and "more" link) is one posting.
 - Copy, don't invent. Leave a field empty rather than guessing.`
 
 var pageJobsSchema = map[string]any{

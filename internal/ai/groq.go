@@ -93,6 +93,9 @@ func (g *Groq) chatJSON(ctx context.Context, system, user, schemaName string, sc
 			},
 		},
 		"temperature": 0.2,
+		// Room for a long job list plus the reasoning tokens gpt-oss spends
+		// first; Groq's default cap cut real listing pages off mid-JSON.
+		"max_completion_tokens": 32768,
 	}
 	// gpt-oss is a reasoning model. "high" made Groq's strict-JSON check
 	// fail on most letters in live tests, so stay at medium.
