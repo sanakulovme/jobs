@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"faangjobs/internal/ailetter"
+	"faangjobs/internal/ai"
 	"faangjobs/internal/crm"
 	"faangjobs/internal/gmail"
 	"faangjobs/internal/source"
@@ -30,12 +30,15 @@ type CRMAPI struct {
 	// letters writes every application e-mail; nil means no AI key is
 	// configured and auto-apply runs fail with errLettersNotConfigured.
 	letters LetterWriter
+	// pages reads arbitrary job pages for "any site" scrapes; nil disables
+	// that source with a clear error.
+	pages PageJobExtractor
 }
 
 // LetterWriter writes one application e-mail for a matched candidate and
-// vacancy — *ailetter.Writer (Claude) in production.
+// vacancy — *ai.Groq or *ai.Claude.
 type LetterWriter interface {
-	Write(ctx context.Context, in ailetter.Input) (ailetter.Letter, error)
+	Write(ctx context.Context, in ai.LetterInput) (ai.Letter, error)
 }
 
 // NewCRMAPI builds a CRM API handler set. idx may be nil until the vacancy
@@ -47,13 +50,13 @@ type LetterWriter interface {
 // clear "AI not configured" error). Reply classification defaults to the
 // dependency-free crm.KeywordClassifier; swapping in an LLM-backed one later
 // is a one-line change here.
-func NewCRMAPI(crmStore *crm.Store, idx *Index, gmailClient *gmail.Client, jobStore *store.Store, fetcher *source.Fetcher, letters LetterWriter) *CRMAPI {
+func NewCRMAPI(crmStore *crm.Store, idx *Index, gmailClient *gmail.Client, jobStore *store.Store, fetcher *source.Fetcher, letters LetterWriter, pages PageJobExtractor) *CRMAPI {
 	if gmailClient == nil {
 		gmailClient = gmail.New(gmail.Config{})
 	}
 	return &CRMAPI{
 		store: crmStore, idx: idx, gmail: gmailClient, classifier: crm.KeywordClassifier{},
-		jobStore: jobStore, fetcher: fetcher, letters: letters,
+		jobStore: jobStore, fetcher: fetcher, letters: letters, pages: pages,
 	}
 }
 

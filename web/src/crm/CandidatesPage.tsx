@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { crmApi } from './api'
-import { DIRECTIONS, DIRECTION_LABEL, DIRECTION_READY } from './api'
-import type { Candidate, CandidateInput, Direction, Document, GmailMailbox, ProfileSpecialty, ScrapeResult } from './api'
+import { DIRECTIONS, DIRECTION_LABEL, DIRECTION_ARBEITSAGENTUR } from './api'
+import type { Candidate, CandidateInput, Direction, Document, GmailMailbox, ProfileSpecialty, ScrapeResult, ScrapeSource } from './api'
 
 const GERMAN_LEVELS = ['', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const DOC_TYPES = [
@@ -61,20 +61,12 @@ function DirectionHome({ onPick }: { onPick: (d: Direction) => void }) {
         </div>
       </div>
       <div className="crm-direction-grid">
-        {DIRECTIONS.map((d) => {
-          const ready = DIRECTION_READY[d]
-          return (
-            <button
-              key={d}
-              className={'crm-direction-tile' + (ready ? '' : ' soon')}
-              onClick={() => ready && onPick(d)}
-              disabled={!ready}
-            >
-              <div className="crm-direction-name">{DIRECTION_LABEL[d]}</div>
-              <div className="crm-direction-count">{ready ? `${counts[d] ?? 0} kandidat` : 'Tez orada'}</div>
-            </button>
-          )
-        })}
+        {DIRECTIONS.map((d) => (
+          <button key={d} className="crm-direction-tile" onClick={() => onPick(d)}>
+            <div className="crm-direction-name">{DIRECTION_LABEL[d]}</div>
+            <div className="crm-direction-count">{`${counts[d] ?? 0} kandidat`}</div>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -191,12 +183,10 @@ function CandidateDetail({ id, onBack }: { id: string; onBack: () => void }) {
           <span className="crm-step-num">{profileDone ? '✓' : '3'}</span>
           Ariza profili
         </button>
-        {DIRECTION_READY[candidate.direction] && (
-          <button className={'crm-step' + (step === 'scrape' ? ' active' : '')} onClick={() => setStep('scrape')}>
-            <span className="crm-step-num">4</span>
-            Scrape va yuborish
-          </button>
-        )}
+        <button className={'crm-step' + (step === 'scrape' ? ' active' : '')} onClick={() => setStep('scrape')}>
+          <span className="crm-step-num">4</span>
+          Scrape va yuborish
+        </button>
       </div>
 
       {step === 'basic' && <BasicInfoStep candidate={candidate} onSaved={setCandidate} />}
@@ -438,14 +428,17 @@ function MailboxCard({
 }
 
 // --- step 4 ----------------------------------------------------------------
-// Shown only for directions with a working scraper (DIRECTION_READY).
-// Fetches fresh vacancies scoped to one city, merges them into that
-// direction's shared on-demand pool,
-// then immediately runs auto-apply scoped to just this candidate. Real
+// Fetches fresh vacancies — from arbeitsagentur.de scoped to one city (for
+// directions that have a search there), or from any page URL the AI reads —
+// merges them into a shared on-demand pool, then immediately runs
+// auto-apply scoped to just this candidate. Real
 // sending requires two deliberate checks (arm + confirm) — never just one
 // checkbox — so a misclick can't email a real employer.
 
 function ScrapeStep({ candidate }: { candidate: Candidate }) {
+  const hasArbeitsagentur = DIRECTION_ARBEITSAGENTUR[candidate.direction]
+  const [source, setSource] = useState<ScrapeSource>(hasArbeitsagentur ? 'arbeitsagentur' : 'site')
+  const [siteUrl, setSiteUrl] = useState('')
   const [city, setCity] = useState('')
   const [radiusKm, setRadiusKm] = useState(50)
   const [onlyNew, setOnlyNew] = useState(true)
@@ -464,15 +457,24 @@ function ScrapeStep({ candidate }: { candidate: Candidate }) {
   }
 
   async function run() {
-    if (!city.trim()) {
+    if (source === 'arbeitsagentur' && !city.trim()) {
       setError('Shahar nomini kiriting')
+      return
+    }
+    if (source === 'site' && !siteUrl.trim()) {
+      setError('Sayt manzilini kiriting')
       return
     }
     setRunning(true)
     setError('')
     setResult(null)
     try {
-      setResult(await crmApi.scrapeCandidate(candidate.id, { city, radiusKm, onlyNew, testMode }))
+      setResult(
+        await crmApi.scrapeCandidate(
+          candidate.id,
+          source === 'site' ? { source, url: siteUrl, onlyNew, testMode } : { source, city, radiusKm, onlyNew, testMode },
+        ),
+      )
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -484,20 +486,67 @@ function ScrapeStep({ candidate }: { candidate: Candidate }) {
     <div className="crm-card">
       <div className="crm-card-title">Scrape va ariza yuborish</div>
       <div className="crm-card-desc">
-        Kandidat uchun tanlangan shahardan yangi vakansiyalarni qidiradi, so'ng ularni shu kandidat bilan
-        solishtirib, mos kelganlariga ariza tayyorlaydi.
+        Tanlangan saytdan yangi vakansiyalarni qidiradi, so'ng ularni shu kandidat bilan solishtirib, mos
+        kelganlariga ariza tayyorlaydi.
       </div>
 
-      <div className="crm-row">
-        <div className="crm-field">
-          <label className="crm-field-label">Shahar (yoki hudud)</label>
-          <input className="crm-input" placeholder="Masalan, Berlin" value={city} onChange={(e) => setCity(e.target.value)} />
-        </div>
-        <div className="crm-field" style={{ maxWidth: 120 }}>
-          <label className="crm-field-label">Radius (km)</label>
-          <input className="crm-input" type="number" min={1} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value) || 50)} />
+      <div className="crm-field">
+        <label className="crm-field-label">Qaysi saytdan</label>
+        <div className="crm-source-options">
+          <label className={'crm-source-option' + (hasArbeitsagentur ? '' : ' disabled')}>
+            <input
+              type="radio"
+              name="scrape-source"
+              checked={source === 'arbeitsagentur'}
+              disabled={!hasArbeitsagentur}
+              onChange={() => setSource('arbeitsagentur')}
+            />
+            <span>
+              <strong>arbeitsagentur.de</strong> (tavsiya etiladi)
+              <span className="crm-item-sub">
+                {hasArbeitsagentur
+                  ? "Germaniya mehnat agentligi — rasmiy baza, shahar va radius bo'yicha"
+                  : "Bu yo'nalish uchun arbeitsagentur.de qidiruvi yo'q"}
+              </span>
+            </span>
+          </label>
+          <label className="crm-source-option">
+            <input type="radio" name="scrape-source" checked={source === 'site'} onChange={() => setSource('site')} />
+            <span>
+              <strong>Boshqa sayt</strong>
+              <span className="crm-item-sub">Istalgan karyera yoki ish e'lonlari sahifasi — AI sahifani o'qib, e'lonlarni ajratadi</span>
+            </span>
+          </label>
         </div>
       </div>
+
+      {source === 'arbeitsagentur' ? (
+        <div className="crm-row">
+          <div className="crm-field">
+            <label className="crm-field-label">Shahar (yoki hudud)</label>
+            <input className="crm-input" placeholder="Masalan, Berlin" value={city} onChange={(e) => setCity(e.target.value)} />
+          </div>
+          <div className="crm-field" style={{ maxWidth: 120 }}>
+            <label className="crm-field-label">Radius (km)</label>
+            <input className="crm-input" type="number" min={1} value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value) || 50)} />
+          </div>
+        </div>
+      ) : (
+        <div className="crm-field">
+          <label className="crm-field-label">Sahifa manzili (URL)</label>
+          <input
+            className="crm-input"
+            type="url"
+            placeholder="https://www.praxis-beispiel.de/karriere"
+            value={siteUrl}
+            onChange={(e) => setSiteUrl(e.target.value)}
+          />
+          <div className="crm-item-sub" style={{ marginTop: 4 }}>
+            E'lonlar ro'yxati ko'rinadigan sahifa havolasini kiriting. Kontentni JavaScript bilan yuklaydigan saytlar
+            (masalan, LinkedIn, Indeed) ishlamasligi mumkin.
+          </div>
+        </div>
+      )}
 
       <label className="crm-item-sub" style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 }}>
         <input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} />

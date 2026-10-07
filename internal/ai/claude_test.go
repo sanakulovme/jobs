@@ -1,4 +1,4 @@
-package ailetter
+package ai
 
 import (
 	"context"
@@ -36,8 +36,8 @@ func fakeAPI(t *testing.T, stopReason, text string, got *map[string]any) *httpte
 	return srv
 }
 
-func testInput(cv *Document) Input {
-	return Input{
+func testInput(cv *Document) LetterInput {
+	return LetterInput{
 		Job: model.Job{
 			ID: "ba~1", Title: "Medizinische Fachangestellte (m/w/d)", Company: "Praxis Dr. Weber",
 			Location: "Berlin", Description: "Wir suchen eine MFA mit Erfahrung in der Kardiologie.",

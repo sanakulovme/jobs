@@ -1,4 +1,4 @@
-package ailetter
+package ai
 
 import (
 	"bytes"
@@ -51,7 +51,7 @@ type groqMessage struct {
 }
 
 // Write implements the letter writer interface.
-func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
+func (g *Groq) Write(ctx context.Context, in LetterInput) (Letter, error) {
 	cvNote := "No CV is attached; rely on the profile data only."
 	if cv := in.CV; cv != nil {
 		cvNote = fmt.Sprintf("The CV (%s) is attached to the e-mail but its text could not be extracted; rely on the profile data only.", cv.Filename)
@@ -65,18 +65,31 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 		}
 	}
 
+	text, err := g.chatJSON(ctx,
+		systemPrompt+"\n\nReply with a JSON object with the keys \"subject\" and \"body\".",
+		cvNote+"\n\n"+describe(in),
+		"application_letter", letterSchema)
+	if err != nil {
+		return Letter{}, err
+	}
+	return parseLetter(text)
+}
+
+// chatJSON runs one chat completion whose reply is constrained to schema
+// (Groq strict JSON-schema mode) and returns the raw JSON text.
+func (g *Groq) chatJSON(ctx context.Context, system, user, schemaName string, schema map[string]any) (string, error) {
 	params := map[string]any{
 		"model": g.model,
 		"messages": []groqMessage{
-			{Role: "system", Content: systemPrompt + "\n\nReply with a JSON object with the keys \"subject\" and \"body\"."},
-			{Role: "user", Content: cvNote + "\n\n" + describe(in)},
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
 		},
 		"response_format": map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
-				"name":   "application_letter",
+				"name":   schemaName,
 				"strict": true,
-				"schema": letterSchema,
+				"schema": schema,
 			},
 		},
 		"temperature": 0.2,
@@ -88,12 +101,12 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 	}
 	reqBody, err := json.Marshal(params)
 	if err != nil {
-		return Letter{}, err
+		return "", err
 	}
 
 	body, err := g.post(ctx, reqBody)
 	if err != nil {
-		return Letter{}, err
+		return "", err
 	}
 
 	var out struct {
@@ -103,15 +116,15 @@ func (g *Groq) Write(ctx context.Context, in Input) (Letter, error) {
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return Letter{}, fmt.Errorf("AI javobini o'qib bo'lmadi: %w", err)
+		return "", fmt.Errorf("AI javobini o'qib bo'lmadi: %w", err)
 	}
 	if len(out.Choices) == 0 {
-		return Letter{}, errors.New("AI bo'sh javob qaytardi")
+		return "", errors.New("AI bo'sh javob qaytardi")
 	}
 	if out.Choices[0].FinishReason == "length" {
-		return Letter{}, errors.New("AI javobi chegaraga yetib kesildi")
+		return "", errors.New("AI javobi chegaraga yetib kesildi")
 	}
-	return parseLetter(out.Choices[0].Message.Content)
+	return out.Choices[0].Message.Content, nil
 }
 
 // groqAttempts is how many times one letter request is tried. Retries

@@ -1,10 +1,12 @@
-// Package ailetter writes each application e-mail with an LLM instead of a
-// hand-maintained letter template: the model reads the vacancy (full
-// description included) and the candidate — their CRM record, matched
-// profile and CV — and writes a German cover e-mail tailored to that one
-// posting. Two backends share one prompt: Groq (groq.go) and Claude
-// (claude.go).
-package ailetter
+// Package ai holds the CRM's two LLM tasks, each with two interchangeable
+// backends — Groq (groq.go) and Claude (claude.go):
+//
+//   - letter.go: write each application e-mail from the vacancy (full
+//     description included) and the candidate's record, profile and CV,
+//     instead of a hand-maintained letter template;
+//   - jobs.go: pull the job postings out of an arbitrary careers/job-board
+//     page, for scraping sites that have no dedicated adapter.
+package ai
 
 import (
 	"encoding/json"
@@ -27,8 +29,8 @@ type Document struct {
 	Data        []byte
 }
 
-// Input is everything one letter is written from.
-type Input struct {
+// LetterInput is everything one letter is written from.
+type LetterInput struct {
 	Job       model.Job // the full job, description included
 	Candidate crm.Candidate
 	Profile   crm.ApplicationProfile
@@ -90,7 +92,7 @@ func isPDF(d *Document) bool {
 
 // describe renders the candidate and vacancy as labelled plain text,
 // skipping empty fields so the model never sees blank slots to fill in.
-func describe(in Input) string {
+func describe(in LetterInput) string {
 	var b strings.Builder
 	line := func(label, value string) {
 		if v := strings.TrimSpace(value); v != "" {

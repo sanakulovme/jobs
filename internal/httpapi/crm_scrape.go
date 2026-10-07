@@ -56,7 +56,15 @@ func (a *CRMAPI) registerScrapeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/crm/candidates/{id}/scrape", a.scrapeCandidate)
 }
 
+// Scrape sources a candidate scrape can use.
+const (
+	scrapeSourceArbeitsagentur = "arbeitsagentur" // default: Bundesagentur's API, city + radius
+	scrapeSourceSite           = "site"           // any page URL, read by the AI (crm_scrape_site.go)
+)
+
 type scrapeInput struct {
+	Source   string `json:"source"` // scrapeSource*; "" = arbeitsagentur
+	URL      string `json:"url"`    // the page to scrape, for source "site"
 	City     string `json:"city"`
 	RadiusKm int    `json:"radiusKm"`
 	OnlyNew  bool   `json:"onlyNew"`
@@ -65,12 +73,13 @@ type scrapeInput struct {
 }
 
 // scrapeCandidate is the candidate-centric replacement for the old global
-// nightly crawl: fetch fresh MFA/ZFA vacancies scoped to one candidate's
-// city, merge them into the shared on-demand pool (deduped by Job.ID), then
-// immediately run auto-apply scoped to just this candidate and just the
-// jobs this scrape turned up (or only the genuinely new ones, if OnlyNew) —
-// reusing runAutoApplyOn, so the same testMode default/gate as /api/crm/run
-// applies here too.
+// nightly crawl: fetch fresh vacancies — from arbeitsagentur.de scoped to one
+// candidate's city, or from any page URL the admin supplies — merge them
+// into a shared on-demand pool (deduped by Job.ID), then immediately run
+// auto-apply scoped to just this candidate and just the jobs this scrape
+// turned up (or only the genuinely new ones, if OnlyNew) — reusing
+// runAutoApplyOn, so the same testMode default/gate as /api/crm/run applies
+// here too.
 func (a *CRMAPI) scrapeCandidate(w http.ResponseWriter, r *http.Request) {
 	if a.jobStore == nil || a.fetcher == nil || a.idx == nil {
 		writeError(w, http.StatusServiceUnavailable, "scrape sozlanmagan (server jobStore/fetcher bilan ishga tushirilmagan)")
@@ -80,8 +89,20 @@ func (a *CRMAPI) scrapeCandidate(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	if in.City == "" {
-		writeError(w, http.StatusBadRequest, "city is required")
+	switch in.Source {
+	case "", scrapeSourceArbeitsagentur:
+		in.Source = scrapeSourceArbeitsagentur
+		if in.City == "" {
+			writeError(w, http.StatusBadRequest, "city is required")
+			return
+		}
+	case scrapeSourceSite:
+		if strings.TrimSpace(in.URL) == "" {
+			writeError(w, http.StatusBadRequest, "sayt manzilini kiriting")
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "unknown source: "+in.Source)
 		return
 	}
 
@@ -94,18 +115,25 @@ func (a *CRMAPI) scrapeCandidate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	cfg, ok := directionScrapeConfigs[candidate.Direction]
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "bu yo'nalish uchun scrape hali ulanmagan")
-		return
+	var allJobs, newJobs []model.Job
+	if in.Source == scrapeSourceSite {
+		allJobs, newJobs, err = a.scrapeSite(r.Context(), in.URL)
+		if errors.Is(err, errPagesNotConfigured) {
+			writeError(w, http.StatusNotImplemented, err.Error())
+			return
+		}
+	} else {
+		cfg, ok := directionScrapeConfigs[candidate.Direction]
+		if !ok {
+			writeError(w, http.StatusNotImplemented, "bu yo'nalish uchun arbeitsagentur.de qidiruvi yo'q — boshqa sayt manzilini kiriting")
+			return
+		}
+		radius := in.RadiusKm
+		if radius <= 0 {
+			radius = 50
+		}
+		allJobs, newJobs, err = a.scrapeOndemand(r.Context(), cfg, in.City, radius)
 	}
-
-	radius := in.RadiusKm
-	if radius <= 0 {
-		radius = 50
-	}
-
-	allJobs, newJobs, err := a.scrapeOndemand(r.Context(), cfg, in.City, radius)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "scrape muvaffaqiyatsiz: "+err.Error())
 		return

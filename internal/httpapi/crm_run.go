@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"faangjobs/internal/ailetter"
+	"faangjobs/internal/ai"
 	"faangjobs/internal/crm"
 	"faangjobs/internal/gmail"
 	"faangjobs/internal/model"
@@ -271,17 +271,17 @@ func (a *CRMAPI) realApply(job model.Job, m crm.Match) (crm.Application, error) 
 // writeLetter has the AI write one application e-mail. The board's index
 // keeps only slim jobs (no description), so the full posting is re-read
 // first; the profile's CV is passed along for the model to read.
-func (a *CRMAPI) writeLetter(ctx context.Context, job model.Job, candidate crm.Candidate, profile crm.ApplicationProfile) (ailetter.Letter, error) {
+func (a *CRMAPI) writeLetter(ctx context.Context, job model.Job, candidate crm.Candidate, profile crm.ApplicationProfile) (ai.Letter, error) {
 	if full, ok := a.idx.JobByID(job.ID); ok {
 		job = full
 	}
-	in := ailetter.Input{Job: job, Candidate: candidate, Profile: profile}
+	in := ai.LetterInput{Job: job, Candidate: candidate, Profile: profile}
 	if doc, ok := candidate.Document(profile.CVDocumentID); ok && profile.CVDocumentID != "" {
 		data, err := a.readUpload(doc)
 		if err != nil {
-			return ailetter.Letter{}, err
+			return ai.Letter{}, err
 		}
-		in.CV = &ailetter.Document{Filename: doc.OriginalFilename, ContentType: doc.ContentType, Data: data}
+		in.CV = &ai.Document{Filename: doc.OriginalFilename, ContentType: doc.ContentType, Data: data}
 	}
 	return a.letters.Write(ctx, in)
 }

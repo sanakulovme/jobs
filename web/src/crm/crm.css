@@ -109,8 +109,7 @@
   border: 1px solid var(--divider); border-radius: 10px; padding: 20px 16px;
   background: var(--bg); text-align: left;
 }
-.crm-direction-tile:not(:disabled):hover { border-color: var(--blue); background: var(--hover); }
-.crm-direction-tile.soon { opacity: 0.55; cursor: default; }
+.crm-direction-tile:hover { border-color: var(--blue); background: var(--hover); }
 .crm-direction-name { font-weight: 600; font-size: 15.5px; }
 .crm-direction-count { color: var(--text-3); font-size: 12.5px; margin-top: 4px; }
 
@@ -118,6 +117,17 @@
 
 .crm-danger { color: var(--red); }
 .crm-danger:hover { text-decoration: underline; }
+
+/* ── scrape source picker (scrape step) ───────────────────────────── */
+.crm-source-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.crm-source-option {
+  display: flex; gap: 8px; align-items: flex-start;
+  border: 1px solid var(--divider); border-radius: 8px; padding: 10px 12px; cursor: pointer;
+}
+.crm-source-option:has(input:checked) { border-color: var(--blue); background: var(--hover); }
+.crm-source-option.disabled { opacity: 0.55; cursor: default; }
+.crm-source-option input { margin-top: 3px; }
+.crm-source-option .crm-item-sub { display: block; margin-top: 2px; }
 
 /* ── real-send arm/confirm box (scrape step) ──────────────────────── */
 .crm-realsend-box {

@@ -1,4 +1,4 @@
-package ailetter
+package ai
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func NewClaude(apiKey string, opts ...option.RequestOption) *Claude {
 
 // Write produces the subject and body for one application.
 // Write implements the letter writer interface.
-func (w *Claude) Write(ctx context.Context, in Input) (Letter, error) {
+func (w *Claude) Write(ctx context.Context, in LetterInput) (Letter, error) {
 	var content []anthropic.BetaContentBlockParamUnion
 
 	// The CV comes first and carries the cache breakpoint: one run usually
@@ -54,17 +54,27 @@ func (w *Claude) Write(ctx context.Context, in Input) (Letter, error) {
 	}
 	content = append(content, anthropic.NewBetaTextBlock(cvNote+"\n\n"+describe(in)))
 
+	text, err := w.messageJSON(ctx, systemPrompt, content, letterSchema)
+	if err != nil {
+		return Letter{}, err
+	}
+	return parseLetter(text)
+}
+
+// messageJSON runs one Messages request whose reply is constrained to
+// schema (structured outputs) and returns the raw JSON text.
+func (w *Claude) messageJSON(ctx context.Context, system string, content []anthropic.BetaContentBlockParamUnion, schema map[string]any) (string, error) {
 	resp, err := w.client.Beta.Messages.New(ctx, anthropic.BetaMessageNewParams{
 		Model:     ClaudeModel,
 		MaxTokens: 16000,
 		System: []anthropic.BetaTextBlockParam{{
-			Text:         systemPrompt,
+			Text:         system,
 			CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
 		}},
 		Messages: []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(content...)},
 		OutputConfig: anthropic.BetaOutputConfigParam{
 			Effort: anthropic.BetaOutputConfigEffortMedium,
-			Format: anthropic.BetaJSONOutputFormatParam{Schema: letterSchema},
+			Format: anthropic.BetaJSONOutputFormatParam{Schema: schema},
 		},
 		// If a safety classifier declines the request, the API re-serves it
 		// on a suitable fallback model inside the same call.
@@ -72,13 +82,13 @@ func (w *Claude) Write(ctx context.Context, in Input) (Letter, error) {
 		Betas:     []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01},
 	})
 	if err != nil {
-		return Letter{}, fmt.Errorf("AI xat yozolmadi: %w", err)
+		return "", fmt.Errorf("AI so'rovi bajarilmadi: %w", err)
 	}
 	switch resp.StopReason {
 	case anthropic.BetaStopReasonRefusal:
-		return Letter{}, errors.New("AI bu xatni yozishni rad etdi")
+		return "", errors.New("AI bu so'rovni rad etdi")
 	case anthropic.BetaStopReasonMaxTokens:
-		return Letter{}, errors.New("AI javobi chegaraga yetib kesildi")
+		return "", errors.New("AI javobi chegaraga yetib kesildi")
 	}
 
 	var text strings.Builder
@@ -87,5 +97,5 @@ func (w *Claude) Write(ctx context.Context, in Input) (Letter, error) {
 			text.WriteString(t.Text)
 		}
 	}
-	return parseLetter(text.String())
+	return text.String(), nil
 }

@@ -1,4 +1,4 @@
-package ailetter
+package ai
 
 import (
 	"context"

@@ -29,13 +29,12 @@ export type ApplicationProfile = {
   updatedAt: string
 }
 
-// Direction is the one recruiting vertical a candidate belongs to.
-// 'mfa_zfa' and 'ausbildung' have a working scraper (both via Bundesagentur,
-// just a different search term — see internal/httpapi/crm_scrape.go's
-// directionScrapeConfigs, whose comment also flags real data-quality
-// concerns with Ausbildung's results). 'til_kursi' was tried the same way
-// and reverted — Bundesagentur returned zero relevant results for it, see
-// that file's comment. 'au_pair' is shown as "tez orada" pending a source.
+// Direction is the one recruiting vertical a candidate belongs to. Every
+// direction can scrape any site by URL (the AI reads the page); 'mfa_zfa'
+// and 'ausbildung' can also search arbeitsagentur.de directly (both via
+// Bundesagentur, just a different search term — see
+// internal/httpapi/crm_scrape.go's directionScrapeConfigs). 'til_kursi' was
+// tried there and reverted: Bundesagentur returned nothing relevant.
 export type Direction = 'mfa_zfa' | 'ausbildung' | 'til_kursi' | 'au_pair'
 export const DIRECTIONS: Direction[] = ['mfa_zfa', 'ausbildung', 'til_kursi', 'au_pair']
 export const DIRECTION_LABEL: Record<Direction, string> = {
@@ -44,7 +43,7 @@ export const DIRECTION_LABEL: Record<Direction, string> = {
   til_kursi: 'Til kursi',
   au_pair: 'Au pair',
 }
-export const DIRECTION_READY: Record<Direction, boolean> = {
+export const DIRECTION_ARBEITSAGENTUR: Record<Direction, boolean> = {
   mfa_zfa: true,
   ausbildung: true,
   til_kursi: false,
@@ -165,6 +164,8 @@ export type CandidateInput = {
   direction: Direction
 }
 
+export type ScrapeSource = 'arbeitsagentur' | 'site'
+
 export type ScrapeResult = {
   foundJobs: number
   newJobs: number
@@ -280,7 +281,7 @@ export const crmApi = {
 
   scrapeCandidate: (
     candidateId: string,
-    input: { city: string; radiusKm?: number; onlyNew: boolean; count?: number; testMode: boolean },
+    input: { source: ScrapeSource; url?: string; city?: string; radiusKm?: number; onlyNew: boolean; count?: number; testMode: boolean },
   ) => postJSON<ScrapeResult>(`/api/crm/candidates/${encodeURIComponent(candidateId)}/scrape`, input),
 
   vacancies: (params: { q?: string; specialty?: string; page?: number; pageSize?: number } = {}, signal?: AbortSignal) => {

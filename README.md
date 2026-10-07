@@ -225,7 +225,7 @@ genuinely new postings, and hit "Scrape". That one action:
 ### AI-written application letters
 
 There are no letter templates. Every application e-mail is written by an
-LLM (`internal/ailetter`) from that one vacancy (full description included)
+LLM (`internal/ai`) from that one vacancy (full description included)
 and that one candidate: their CRM record, the matched profile's
 specialties/experience and, when it is a PDF, their CV. The letter is German,
 formal, 150–250 words, and may only use facts from the CV/profile. Test mode
