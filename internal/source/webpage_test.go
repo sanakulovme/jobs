@@ -40,9 +40,9 @@ func TestPageText(t *testing.T) {
 func TestPickApplicationEmail(t *testing.T) {
 	cases := map[string]string{
 		"Datenschutz: datenschutz@x.de. Fragen: info@x.de, Bewerbung: karriere@x.de": "karriere@x.de",
-		"noreply@x.de oder info@praxis-mueller.de.":                                 "info@praxis-mueller.de",
-		"nur datenschutz@x.de":                                                       "",
-		"keine Adresse":                                                              "",
+		"noreply@x.de oder info@praxis-mueller.de.":                                  "info@praxis-mueller.de",
+		"nur datenschutz@x.de": "",
+		"keine Adresse":        "",
 	}
 	for text, want := range cases {
 		if got := PickApplicationEmail(text, nil); got != want {

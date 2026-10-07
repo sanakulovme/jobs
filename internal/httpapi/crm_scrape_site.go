@@ -185,12 +185,20 @@ func siteChrome(listingText string, jobs []ai.PageJob) pageChrome {
 	return c
 }
 
-// strip drops the lines a posting page shares with the listing page.
+// strip drops the lines a posting page shares with the listing page, and
+// the runs of blank lines that leaves behind.
 func (c pageChrome) strip(text string) string {
 	var kept []string
 	for _, l := range strings.Split(text, "\n") {
-		if t := strings.TrimSpace(l); t == "" || !c.lines[t] {
-			kept = append(kept, l)
+		t := strings.TrimSpace(l)
+		if t == "" {
+			if len(kept) > 0 && kept[len(kept)-1] != "" {
+				kept = append(kept, "")
+			}
+			continue
+		}
+		if !c.lines[t] {
+			kept = append(kept, t)
 		}
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
