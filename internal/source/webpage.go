@@ -69,15 +69,25 @@ var (
 	emailPrefer = []string{"bewerb", "karriere", "career", "jobs", "job", "recruit", "personal", "hr", "ausbildung", "stellen"}
 )
 
+// Emails returns every e-mail address in text.
+func Emails(text string) []string {
+	var out []string
+	for _, e := range baEmailRe.FindAllString(text, -1) {
+		out = append(out, strings.TrimRight(e, "."))
+	}
+	return out
+}
+
 // PickApplicationEmail returns the address in text most likely meant for
 // applications: one whose local part says so (bewerbung@, karriere@, hr@…)
 // if present, else the first that isn't a privacy/no-reply/support address.
-func PickApplicationEmail(text string) string {
+// Addresses in exclude (lower-cased) are never returned.
+func PickApplicationEmail(text string, exclude map[string]bool) string {
 	first := ""
-	for _, e := range baEmailRe.FindAllString(text, -1) {
-		e = strings.TrimRight(e, ".")
-		local := strings.ToLower(e[:strings.Index(e, "@")])
-		if containsAnyOf(local, emailAvoid) || strings.HasSuffix(strings.ToLower(e), ".png") || strings.HasSuffix(strings.ToLower(e), ".jpg") {
+	for _, e := range Emails(text) {
+		lower := strings.ToLower(e)
+		local := lower[:strings.Index(lower, "@")]
+		if exclude[lower] || containsAnyOf(local, emailAvoid) || strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") {
 			continue
 		}
 		if containsAnyOf(local, emailPrefer) {

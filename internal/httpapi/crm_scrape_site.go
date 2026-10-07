@@ -103,7 +103,13 @@ func (a *CRMAPI) scrapeSite(ctx context.Context, rawURL string) (all, newOnes []
 			Website:          pageURL.Scheme + "://" + pageURL.Host,
 		}
 	}
-	a.enrichFromPostingPages(ctx, pageURL, jobs)
+	chrome := siteChrome(text, pageJobs)
+	for i := range jobs {
+		if chrome.emails[strings.ToLower(jobs[i].ApplicationEmail)] {
+			jobs[i].ApplicationEmail = ""
+		}
+	}
+	a.enrichFromPostingPages(ctx, pageURL, jobs, chrome)
 
 	// Pages rarely give a machine-readable date, so a posting counts as
 	// published when first seen (the merge below keeps the first sighting).
@@ -143,11 +149,59 @@ func (a *CRMAPI) scrapeSite(ctx context.Context, rawURL string) (all, newOnes []
 	return fetched, newOnes, nil
 }
 
+// pageChrome is what a site repeats on every page — navigation, footer,
+// the site's own contact address — learned from the listing page so it can
+// be told apart from a posting's own content.
+type pageChrome struct {
+	lines  map[string]bool
+	emails map[string]bool // lower-cased; never an application address
+}
+
+// siteChrome collects the listing page's lines, and — when the listing shows
+// postings from several employers, i.e. it is a job board rather than one
+// employer's careers page — every e-mail on it: on a board those are the
+// board's own addresses (a live test found kontakt@medi-karriere.de picked
+// as the "application e-mail" for half the postings). On a single
+// employer's page the listing's address may well be the right one, so it
+// stays usable.
+func siteChrome(listingText string, jobs []ai.PageJob) pageChrome {
+	c := pageChrome{lines: map[string]bool{}, emails: map[string]bool{}}
+	for _, l := range strings.Split(listingText, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			c.lines[l] = true
+		}
+	}
+	employers := map[string]bool{}
+	for _, j := range jobs {
+		if j.Employer != "" {
+			employers[strings.ToLower(j.Employer)] = true
+		}
+	}
+	if len(employers) >= 2 {
+		for _, e := range source.Emails(listingText) {
+			c.emails[strings.ToLower(e)] = true
+		}
+	}
+	return c
+}
+
+// strip drops the lines a posting page shares with the listing page.
+func (c pageChrome) strip(text string) string {
+	var kept []string
+	for _, l := range strings.Split(text, "\n") {
+		if t := strings.TrimSpace(l); t == "" || !c.lines[t] {
+			kept = append(kept, l)
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
 // enrichFromPostingPages visits each posting's own page (when it has one
 // other than the listing) to fill in the application e-mail and a fuller
-// description. Best-effort: a page that fails to load just leaves the job as
-// the listing described it.
-func (a *CRMAPI) enrichFromPostingPages(ctx context.Context, listing *url.URL, jobs []model.Job) {
+// description, ignoring what the page shares with the listing (site chrome).
+// Best-effort: a page that fails to load just leaves the job as the listing
+// described it.
+func (a *CRMAPI) enrichFromPostingPages(ctx context.Context, listing *url.URL, jobs []model.Job, chrome pageChrome) {
 	var todo []int
 	for i, j := range jobs {
 		if j.URL != listing.String() && len(todo) < siteMaxDetailPages {
@@ -170,9 +224,9 @@ func (a *CRMAPI) enrichFromPostingPages(ctx context.Context, listing *url.URL, j
 				if err != nil {
 					continue
 				}
-				text := source.PageText(string(body), u)
+				text := chrome.strip(source.PageText(string(body), u))
 				if jobs[i].ApplicationEmail == "" {
-					jobs[i].ApplicationEmail = source.PickApplicationEmail(text)
+					jobs[i].ApplicationEmail = source.PickApplicationEmail(text, chrome.emails)
 				}
 				if len(text) > len(jobs[i].Description) {
 					if len(text) > siteMaxDescription {

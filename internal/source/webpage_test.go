@@ -45,8 +45,15 @@ func TestPickApplicationEmail(t *testing.T) {
 		"keine Adresse":                                                              "",
 	}
 	for text, want := range cases {
-		if got := PickApplicationEmail(text); got != want {
+		if got := PickApplicationEmail(text, nil); got != want {
 			t.Errorf("PickApplicationEmail(%q) = %q, want %q", text, got, want)
 		}
+	}
+}
+
+func TestPickApplicationEmailExcludes(t *testing.T) {
+	text := "Kontakt: kontakt@board.example – Bewerbung an mueller@praxis.example"
+	if got := PickApplicationEmail(text, map[string]bool{"kontakt@board.example": true}); got != "mueller@praxis.example" {
+		t.Errorf("got %q", got)
 	}
 }
