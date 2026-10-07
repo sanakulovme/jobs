@@ -206,16 +206,29 @@ APIs). `GET /api/me` reports the signed-in user. Health endpoints stay open.
 ### Candidate-scoped scraping (no daily cron)
 
 There is no global nightly crawl. Scraping is triggered per candidate from
-the CRM: open a candidate (must be in the `mfa_zfa` direction — the only one
-with a working source today), pick a city/radius and whether to consider only
-genuinely new postings, and hit "Scrape". That one action:
+the CRM: open a candidate, pick the source, whether to consider only
+genuinely new postings, and hit "Scrape". Two sources:
 
-1. Fetches fresh MFA/ZFA vacancies from Bundesagentur scoped to that city
+- **arbeitsagentur.de** (default; `mfa_zfa` and `ausbildung` directions) —
+  Bundesagentur's API, scoped to a city and radius.
+- **Any site** (every direction) — paste a careers or job-board page URL.
+  The AI (same backend as the letters, `internal/ai/jobs.go`) lists the
+  postings on the page; each posting's own page is then fetched (no AI) for
+  an application e-mail and a fuller description
+  (`internal/httpapi/crm_scrape_site.go`). On a multi-employer board, the
+  board's own addresses are never taken as application e-mails. Only public
+  http(s) hosts are allowed, and pages that render their listings with
+  JavaScript (LinkedIn, Indeed, …) come back empty.
+
+That one action:
+
+1. Fetches fresh vacancies from the chosen source
    (`POST /api/crm/candidates/{id}/scrape`, `internal/httpapi/crm_scrape.go`).
-2. Merges them into a single shared on-demand pool (`data/companies/bundesagentur-mfa-ondemand.json`)
-   deduped by `Job.ID` — the same posting found again via a different
-   city/candidate never double-counts, and the board/CRM see it immediately
-   (no polling delay).
+2. Merges them into a shared on-demand pool — one per Bundesagentur search
+   (`data/companies/bundesagentur-mfa-ondemand.json`) or per site host
+   (`data/companies/site-<host>.json`) — deduped by `Job.ID`: the same
+   posting found again never double-counts, and the board/CRM see it
+   immediately (no polling delay).
 3. Immediately runs auto-apply scoped to just that candidate and just the
    jobs this scrape turned up (`crm.RunAutoApply`, the same matching/scoring
    logic behind the whole CRM) — in **test mode by default**, exactly like
