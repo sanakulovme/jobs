@@ -116,7 +116,7 @@ func (a *CRMAPI) scrapeSite(ctx context.Context, rawURL string) (all, newOnes []
 	now := time.Now().UTC()
 	for i := range jobs {
 		j := &jobs[i]
-		j.Specialties = source.ClassifySpecialties(j.Title + " " + j.Description)
+		j.Specialties = source.ClassifySpecialties(j.Title, j.Description)
 		j.ContactPerson, j.Salutation = source.ContactPerson(j.Description)
 		j.PostedAt = now
 	}

@@ -109,10 +109,10 @@ func containsAnyOf(s string, subs []string) bool {
 	return false
 }
 
-// ClassifySpecialties tags free text with model.SpecialtyVocabulary slugs —
-// the same keyword table the Bundesagentur adapter uses, so CRM matching
-// treats postings from any site alike.
-func ClassifySpecialties(text string) []string { return baClassifySpecialties("", "", text) }
+// ClassifySpecialties tags a posting with model.SpecialtyVocabulary slugs —
+// the same keyword table and title-only rules the Bundesagentur adapter
+// uses, so CRM matching treats postings from any site alike.
+func ClassifySpecialties(title, desc string) []string { return baClassifySpecialties(title, "", desc) }
 
 // ContactPerson finds a "Frau/Herr Name" contact in text, as the
 // Bundesagentur adapter does for its postings.

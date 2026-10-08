@@ -348,14 +348,27 @@ var baSlugKeywords = map[string][]string{
 	"pflege":         {"pflege", "krankenpfleg", "altenpfleg"},
 }
 
+// baTitleOnlySlugs are decided from title+profession alone. "ausbildung"
+// marks a posting that IS an apprenticeship; descriptions of ordinary jobs
+// mention the word constantly as a requirement ("abgeschlossene Ausbildung
+// als MFA"), which tagged qualified-staff jobs as apprenticeships and matched
+// them to candidates looking for an Ausbildungsplatz.
+var baTitleOnlySlugs = map[string]bool{"ausbildung": true}
+
 // baClassifySpecialties returns every model.SpecialtyVocabulary slug whose
-// keywords appear in title+profession+description, best-effort — a posting
-// that names no recognizable specialty beyond the base MFA profession simply
-// gets ["mfa"] (or nothing, if even that phrase is absent from the text).
+// keywords appear in title+profession+description (title+profession only
+// for baTitleOnlySlugs), best-effort — a posting that names no recognizable
+// specialty beyond the base MFA profession simply gets ["mfa"] (or nothing,
+// if even that phrase is absent from the text).
 func baClassifySpecialties(title, hauptberuf, desc string) []string {
-	hay := strings.ToLower(title + " " + hauptberuf + " " + desc)
+	head := strings.ToLower(title + " " + hauptberuf)
+	full := head + " " + strings.ToLower(desc)
 	var out []string
 	for _, slug := range model.SpecialtyVocabulary {
+		hay := full
+		if baTitleOnlySlugs[slug] {
+			hay = head
+		}
 		for _, kw := range baSlugKeywords[slug] {
 			if strings.Contains(hay, kw) {
 				out = append(out, slug)
