@@ -42,7 +42,7 @@ export function CrmShell() {
         </div>
         <div className="sb-section">
           <a className="sb-item" href="/">
-            <span className="sb-item-text">← Job board</span>
+            <span className="sb-item-text">← Ish e'lonlari</span>
           </a>
         </div>
       </aside>
