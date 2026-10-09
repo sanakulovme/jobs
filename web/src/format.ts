@@ -13,15 +13,15 @@ export function relativeDate(iso: string): string {
   const d = parseDate(iso)
   if (!d) return '—'
   const mins = Math.floor((Date.now() - d.getTime()) / 60000)
-  if (mins < 1) return 'now'
-  if (mins < 60) return `${mins}m`
+  if (mins < 1) return 'hozir'
+  if (mins < 60) return `${mins} daq`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h`
+  if (hrs < 24) return `${hrs} soat`
   const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days}d`
+  if (days < 30) return `${days} kun`
   const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo`
-  return `${Math.floor(days / 365)}y`
+  if (months < 12) return `${months} oy`
+  return `${Math.floor(days / 365)} yil`
 }
 
 // Tidy a location string: collapse empty comma segments ("Remote, , Romania")
@@ -33,6 +33,7 @@ export function cleanLocation(loc: string): string {
       .replace(/\s*,\s*(,\s*)+/g, ', ')
       .replace(/,(?=\S)/g, ', ')
       .replace(/^[\s,;]+|[\s,;]+$/g, '')
+      .replace(/\bGermany\b/g, 'Germaniya')
       .trim() || '—'
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import type { Facet, Job, Me, Stats } from './api'
 import { numberFmt, relativeDate } from './format'
+import { label } from './i18n'
 import { JobRow } from './JobRow'
 import { Check, Menu, Moon, SearchIcon, Sun, XIcon } from './icons'
 
@@ -17,10 +18,10 @@ const CITY_LIMIT = 40
 const GERMANY = 'Germany'
 
 const SORTS: { value: string; label: string }[] = [
-  { value: 'recent', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title A–Z' },
-  { value: 'company', label: 'Company A–Z' },
+  { value: 'recent', label: 'Avval yangilari' },
+  { value: 'oldest', label: 'Avval eskilari' },
+  { value: 'title', label: 'Lavozim A–Z' },
+  { value: 'company', label: 'Kompaniya A–Z' },
 ]
 
 export function App() {
@@ -258,7 +259,7 @@ export function App() {
   }
 
   const sidebar = (
-    <aside className={'sidebar' + (sidebarOpen ? ' open' : '')} aria-label="Filters">
+    <aside className={'sidebar' + (sidebarOpen ? ' open' : '')} aria-label="Filtrlar">
       <div className="sb-brand">
         <span className="sb-logo" aria-hidden="true">F</span>
         <span className="sb-name">FaangJobs</span>
@@ -268,15 +269,15 @@ export function App() {
         </a>
         <button
           className="sb-iconbtn"
-          aria-label="Toggle theme"
-          title="Toggle theme"
+          aria-label="Mavzuni almashtirish"
+          title="Mavzuni almashtirish"
           onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
         >
           {theme === 'light' ? <Moon /> : <Sun />}
         </button>
         <button
           className="sb-iconbtn sb-close"
-          aria-label="Close filters"
+          aria-label="Filtrlarni yopish"
           onClick={() => setSidebarOpen(false)}
         >
           <XIcon />
@@ -288,13 +289,13 @@ export function App() {
         <input
           value={qInput}
           onChange={(e) => setQInput(e.target.value)}
-          placeholder="Search jobs…"
-          aria-label="Search jobs"
+          placeholder="Ish qidirish…"
+          aria-label="Ish qidirish"
           autoComplete="off"
           spellCheck={false}
         />
         {qInput && (
-          <button className="sb-x" aria-label="Clear search" onClick={() => setQInput('')}>
+          <button className="sb-x" aria-label="Qidiruvni tozalash" onClick={() => setQInput('')}>
             <XIcon />
           </button>
         )}
@@ -302,12 +303,12 @@ export function App() {
 
       {siteItems.length > 1 && (
         <div className="sb-section" role="group" aria-label="Site">
-          <div className="sb-label">Site</div>
+          <div className="sb-label">Sayt</div>
           <button
             className={'sb-item' + (site === '' ? ' on' : '')}
             onClick={() => pickAndClose(setSite)('')}
           >
-            <span className="sb-item-text">All sites</span>
+            <span className="sb-item-text">Barcha saytlar</span>
           </button>
           {siteItems.map((s) => (
             <button
@@ -323,7 +324,7 @@ export function App() {
       )}
 
       <div className="sb-section" role="group" aria-label="Region">
-        <div className="sb-label">Region</div>
+        <div className="sb-label">Hudud</div>
         <button
           className={'sb-item' + (region === '' && country === '' ? ' on' : '')}
           onClick={() => {
@@ -333,7 +334,7 @@ export function App() {
             pickAndClose(setCountry)('')
           }}
         >
-          <span className="sb-item-text">Everywhere</span>
+          <span className="sb-item-text">Hamma joyda</span>
         </button>
         {germanyCount !== null && (
           <button
@@ -345,7 +346,7 @@ export function App() {
               pickAndClose(setCountry)(country === GERMANY && region === '' ? '' : GERMANY)
             }}
           >
-            <span className="sb-item-text">All of Germany</span>
+            <span className="sb-item-text">Butun Germaniya</span>
             <span className="sb-count">{germanyCount ? numberFmt(germanyCount) : ''}</span>
           </button>
         )}
@@ -360,14 +361,14 @@ export function App() {
               pickAndClose(setRegion)(region === r.value ? '' : r.value)
             }}
           >
-            <span className="sb-item-text">{r.value}</span>
+            <span className="sb-item-text">{label(r.value)}</span>
             <span className="sb-count">{r.count ? numberFmt(r.count) : ''}</span>
           </button>
         ))}
       </div>
 
       <div className="sb-section" role="group" aria-label="Country">
-        <div className="sb-label">{region ? `Country in ${region}` : 'Country'}</div>
+        <div className="sb-label">{region ? `Davlat (${label(region)})` : 'Davlat'}</div>
         {region && (
           <button
             className={'sb-item' + (country === '' ? ' on' : '')}
@@ -377,7 +378,7 @@ export function App() {
               pickAndClose(setCountry)('')
             }}
           >
-            <span className="sb-item-text">All of {region}</span>
+            <span className="sb-item-text">Butun {label(region)}</span>
           </button>
         )}
         {countryItems.map((c) => (
@@ -390,7 +391,7 @@ export function App() {
               pickAndClose(setCountry)(country === c.value ? '' : c.value)
             }}
           >
-            <span className="sb-item-text">{c.value}</span>
+            <span className="sb-item-text">{label(c.value)}</span>
             <span className="sb-count">{c.count ? numberFmt(c.count) : ''}</span>
           </button>
         ))}
@@ -399,7 +400,7 @@ export function App() {
       {stateItems.length > 0 && (
         <div className="sb-section" role="group" aria-label="State">
           <div className="sb-label">
-            {country === 'Canada' ? 'Province' : country === GERMANY ? 'Bundesland' : 'State'}
+            {country === 'Canada' ? 'Provinsiya' : country === GERMANY ? 'Federal yer (Bundesland)' : 'Shtat'}
           </div>
           <button
             className={'sb-item' + (state === '' ? ' on' : '')}
@@ -408,7 +409,7 @@ export function App() {
               pickAndClose(setState)('')
             }}
           >
-            <span className="sb-item-text">All of {country || region}</span>
+            <span className="sb-item-text">Butun {label(country || region)}</span>
           </button>
           {stateItems.map((s) => (
             <button
@@ -428,12 +429,12 @@ export function App() {
 
       {cityItems.length > 0 && (
         <div className="sb-section" role="group" aria-label="City">
-          <div className="sb-label">{state ? `City in ${state}` : 'City'}</div>
+          <div className="sb-label">{state ? `Shahar (${state})` : 'Shahar'}</div>
           <button
             className={'sb-item' + (city === '' ? ' on' : '')}
             onClick={() => pickAndClose(setCity)('')}
           >
-            <span className="sb-item-text">All of {state || country}</span>
+            <span className="sb-item-text">Butun {state || label(country)}</span>
           </button>
           {cityItems.map((c) => (
             <button
@@ -448,13 +449,13 @@ export function App() {
         </div>
       )}
 
-      <div className="sb-section" role="group" aria-label="Category">
-        <div className="sb-label">Category</div>
+      <div className="sb-section" role="group" aria-label="Kategoriya">
+        <div className="sb-label">Kategoriya</div>
         <button
           className={'sb-item' + (category === '' ? ' on' : '')}
           onClick={() => pickAndClose(setCategory)('')}
         >
-          <span className="sb-item-text">All categories</span>
+          <span className="sb-item-text">Barcha kategoriyalar</span>
         </button>
         {categoryItems.map((c) => (
           <button
@@ -462,21 +463,21 @@ export function App() {
             className={'sb-item' + (category === c.value ? ' on' : '')}
             onClick={() => pickAndClose(setCategory)(category === c.value ? '' : c.value)}
           >
-            <span className="sb-item-text">{c.value}</span>
+            <span className="sb-item-text">{label(c.value)}</span>
             <span className="sb-count">{c.count ? numberFmt(c.count) : ''}</span>
           </button>
         ))}
       </div>
 
-      <div className="sb-section" role="group" aria-label="Filters">
-        <div className="sb-label">Filters</div>
+      <div className="sb-section" role="group" aria-label="Qo'shimcha">
+        <div className="sb-label">Qo'shimcha</div>
         <button
           className={'sb-item' + (remote ? ' on' : '')}
           onClick={toggleWithReset(setRemote)}
           aria-pressed={remote}
         >
           <span className="sb-check" aria-hidden="true">{remote && <Check />}</span>
-          <span className="sb-item-text">Remote</span>
+          <span className="sb-item-text">Masofaviy</span>
         </button>
         <button
           className={'sb-item' + (relocation ? ' on' : '')}
@@ -484,12 +485,12 @@ export function App() {
           aria-pressed={relocation}
         >
           <span className="sb-check" aria-hidden="true">{relocation && <Check />}</span>
-          <span className="sb-item-text">Relocation</span>
+          <span className="sb-item-text">Ko'chib o'tishga yordam</span>
         </button>
       </div>
 
-      <div className="sb-section" role="group" aria-label="Sort">
-        <div className="sb-label">Sort</div>
+      <div className="sb-section" role="group" aria-label="Saralash">
+        <div className="sb-label">Saralash</div>
         {SORTS.map((s) => (
           <button
             key={s.value}
@@ -504,7 +505,7 @@ export function App() {
       {hasFilters && (
         <div className="sb-section">
           <button className="sb-item sb-clear" onClick={clearFilters}>
-            <XIcon /> Clear filters
+            <XIcon /> Filtrlarni tozalash
           </button>
         </div>
       )}
@@ -518,7 +519,7 @@ export function App() {
   }, [me])
   const avatarTitle = me ? [me.name, me.username].filter(Boolean).join(' · ') : ''
   const avatar = avatarLabel ? (
-    <span className="avatar" title={avatarTitle} aria-label={`Signed in as ${avatarTitle}`}>
+    <span className="avatar" title={avatarTitle} aria-label={`Kirgan foydalanuvchi: ${avatarTitle}`}>
       {avatarLabel}
     </span>
   ) : null
@@ -531,7 +532,7 @@ export function App() {
       <main className="main">
         {avatar && <div className="avatar-corner">{avatar}</div>}
         <div className="mobilebar">
-          <button className="sb-iconbtn" aria-label="Open filters" onClick={() => setSidebarOpen(true)}>
+          <button className="sb-iconbtn" aria-label="Filtrlarni ochish" onClick={() => setSidebarOpen(true)}>
             <Menu />
           </button>
           <span className="sb-name">42 FaangJobs</span>
@@ -543,27 +544,27 @@ export function App() {
           <div className="page-icon" aria-hidden="true">🌍</div>
           <h1 className="page-title">42 FaangJobs</h1>
           <p className="page-desc">
-            Software, data, infrastructure and security roles at top tech companies —
-            every opening, everywhere. One click takes you to the original posting.
+            Germaniya va boshqa davlatlardagi ish e'lonlari bir joyda — sayt, hudud va
+            shahar bo'yicha saralang. Bir bosishda asl e'longa o'tasiz.
           </p>
           <p className="page-stats">
             {stats
-              ? `${numberFmt(stats.totalJobs)} roles · ${numberFmt(stats.companies)} companies · ` +
-                (relativeDate(stats.lastUpdated) === 'now'
-                  ? 'updated just now'
-                  : `updated ${relativeDate(stats.lastUpdated)} ago`)
+              ? `${numberFmt(stats.totalJobs)} ta e'lon · ${numberFmt(stats.companies)} ta manba · ` +
+                (relativeDate(stats.lastUpdated) === 'hozir'
+                  ? 'hozirgina yangilandi'
+                  : `${relativeDate(stats.lastUpdated)} oldin yangilandi`)
               : ' '}
           </p>
 
           <div className="countline" role="status">
-            {loading ? 'Loading…' : `${numberFmt(total)} ${total === 1 ? 'job' : 'jobs'}`}
+            {loading ? 'Yuklanmoqda…' : `${numberFmt(total)} ta e'lon`}
           </div>
 
           <div className="list">
             {error && (
               <div className="state">
-                <div className="h">Couldn’t load jobs — {error}</div>
-                <button onClick={() => setRetryNonce((n) => n + 1)}>Retry</button>
+                <div className="h">E'lonlarni yuklab bo'lmadi — {error}</div>
+                <button onClick={() => setRetryNonce((n) => n + 1)}>Qayta urinish</button>
               </div>
             )}
 
@@ -581,8 +582,8 @@ export function App() {
 
             {!error && !(loading && page === 1) && jobs.length === 0 && (
               <div className="state">
-                <div className="h">No jobs match.</div>
-                {hasFilters && <button onClick={clearFilters}>Clear filters</button>}
+                <div className="h">Mos e'lon topilmadi.</div>
+                {hasFilters && <button onClick={clearFilters}>Filtrlarni tozalash</button>}
               </div>
             )}
 
@@ -599,8 +600,8 @@ export function App() {
             {hasMore && !(loading && page === 1) && (
               <button className="more" disabled={loading} onClick={() => setPage((p) => p + 1)}>
                 {loading
-                  ? 'Loading…'
-                  : `Load more  ·  ${numberFmt(total - jobs.length)} remaining`}
+                  ? 'Yuklanmoqda…'
+                  : `Yana ko'rsatish  ·  ${numberFmt(total - jobs.length)} ta qoldi`}
               </button>
             )}
           </div>

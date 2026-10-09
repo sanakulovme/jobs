@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { Job } from './api'
 import { api } from './api'
 import { cleanLocation, cleanTitle, relativeDate, sanitizeHTML } from './format'
+import { label } from './i18n'
 import { ArrowUpRight, Triangle } from './icons'
 
 type Props = {
@@ -21,7 +22,7 @@ export function JobRow({ job, expanded, onToggle }: Props) {
           className={'jtoggle' + (expanded ? ' open' : '')}
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-label={expanded ? 'Hide details' : 'Show details'}
+          aria-label={expanded ? 'Tafsilotlarni yashirish' : 'Tafsilotlarni ko\'rsatish'}
         >
           <Triangle />
         </button>
@@ -30,8 +31,8 @@ export function JobRow({ job, expanded, onToggle }: Props) {
           <span className="jco" title={job.company}>{job.company}</span>
         </button>
         <div className="jside">
-          {job.remote && <span className="jtag blue">Remote</span>}
-          {job.relocation && <span className="jtag green">Relocation</span>}
+          {job.remote && <span className="jtag blue">Masofaviy</span>}
+          {job.relocation && <span className="jtag green">Ko'chishga yordam</span>}
           <span className="jloc" title={job.location}>{cleanLocation(job.location)}</span>
           <span className="jtime">{relativeDate(job.postedAt)}</span>
           <a
@@ -39,9 +40,9 @@ export function JobRow({ job, expanded, onToggle }: Props) {
             href={job.url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Apply at ${job.company} (opens the original posting)`}
+            aria-label={`${job.company} ga ariza (asl e'lon ochiladi)`}
           >
-            Apply <ArrowUpRight />
+            Ariza berish <ArrowUpRight />
           </a>
         </div>
       </div>
@@ -56,28 +57,28 @@ export function JobRow({ job, expanded, onToggle }: Props) {
 // posting rarely mentions all of them.
 function Facts({ job }: { job: Job }) {
   const rows: [string, ReactNode][] = []
-  if (job.referenceNumber) rows.push(['Reference number', job.referenceNumber])
-  if (job.medicalSpecialty) rows.push(['Medical specialty', job.medicalSpecialty])
-  if (job.contactPerson) rows.push(['Contact person', [job.salutation, job.contactPerson].filter(Boolean).join(' ')])
-  if (job.applicationEmail) rows.push(['Application email', <a href={`mailto:${job.applicationEmail}`}>{job.applicationEmail}</a>])
-  if (job.requiredGermanLevel) rows.push(['Required German level', job.requiredGermanLevel])
-  if (job.website) rows.push(['Website', <a href={job.website} target="_blank" rel="noopener noreferrer">{job.website}</a>])
-  if (job.applicationPortal) rows.push(['Application portal', <a href={job.applicationPortal} target="_blank" rel="noopener noreferrer">{job.applicationPortal}</a>])
+  if (job.referenceNumber) rows.push(['Referens raqami', job.referenceNumber])
+  if (job.medicalSpecialty) rows.push(['Tibbiy yo\'nalish', job.medicalSpecialty])
+  if (job.contactPerson) rows.push(['Aloqa uchun shaxs', [job.salutation, job.contactPerson].filter(Boolean).join(' ')])
+  if (job.applicationEmail) rows.push(['Ariza uchun email', <a href={`mailto:${job.applicationEmail}`}>{job.applicationEmail}</a>])
+  if (job.requiredGermanLevel) rows.push(['Talab qilingan nemis tili darajasi', job.requiredGermanLevel])
+  if (job.website) rows.push(['Veb-sayt', <a href={job.website} target="_blank" rel="noopener noreferrer">{job.website}</a>])
+  if (job.applicationPortal) rows.push(['Ariza portali', <a href={job.applicationPortal} target="_blank" rel="noopener noreferrer">{job.applicationPortal}</a>])
   if (job.requiredQualifications?.length) {
-    rows.push(['Required qualifications', (
+    rows.push(['Talab qilingan malakalar', (
       <ul className="jfacts-list">
         {job.requiredQualifications.map((q, i) => <li key={i}>{q}</li>)}
       </ul>
     )])
   }
-  if (job.mainDuties) rows.push(['Main duties', job.mainDuties])
-  if (job.mandatoryRequirements) rows.push(['Mandatory requirements', job.mandatoryRequirements])
-  if (job.preferredRequirements) rows.push(['Preferred requirements', job.preferredRequirements])
+  if (job.mainDuties) rows.push(['Asosiy vazifalar', job.mainDuties])
+  if (job.mandatoryRequirements) rows.push(['Majburiy talablar', job.mandatoryRequirements])
+  if (job.preferredRequirements) rows.push(['Afzal ko\'riladigan talablar', job.preferredRequirements])
 
   const flags: string[] = []
-  if (job.requiresDriversLicense) flags.push("Driver's license required")
-  if (job.requiresOwnCar) flags.push('Own car required')
-  if (job.requiresGermanMfaTraining) flags.push('German MFA training required')
+  if (job.requiresDriversLicense) flags.push('Haydovchilik guvohnomasi kerak')
+  if (job.requiresOwnCar) flags.push('Shaxsiy avtomobil kerak')
+  if (job.requiresGermanMfaTraining) flags.push('Germaniyada MFA ma\'lumoti kerak')
 
   if (rows.length === 0 && flags.length === 0) return null
 
@@ -127,7 +128,7 @@ function Detail({ job }: { job: Job }) {
     <div className="jdetail">
       <div className="jdetail-meta">
         {(job.categories || []).map((c) => (
-          <span className="jtag" key={c}>{c}</span>
+          <span className="jtag" key={c}>{label(c)}</span>
         ))}
         {job.department && <span className="jtag">{job.department}</span>}
         <span>{allLocations.join(' · ')}</span>
@@ -135,10 +136,10 @@ function Detail({ job }: { job: Job }) {
 
       {state === 'ok' && full && <Facts job={full} />}
 
-      {state === 'loading' && <div className="state" style={{ padding: '8px 0' }}>Loading…</div>}
+      {state === 'loading' && <div className="state" style={{ padding: '8px 0' }}>Yuklanmoqda…</div>}
       {state === 'error' && (
         <div className="state" style={{ padding: '8px 0' }}>
-          Couldn’t load the description — open the posting with Apply.
+          Tavsifni yuklab bo'lmadi — e'lonni "Ariza berish" orqali oching.
         </div>
       )}
       {state === 'ok' &&
@@ -146,13 +147,13 @@ function Detail({ job }: { job: Job }) {
           <div className="jdesc" dangerouslySetInnerHTML={{ __html: sanitizeHTML(desc) }} />
         ) : (
           <div className="state" style={{ padding: '8px 0' }}>
-            No description provided — open the posting with Apply.
+            Tavsif berilmagan — e'lonni "Ariza berish" orqali oching.
           </div>
         ))}
 
       <div className="jdetail-actions">
         <a className="btn-primary" href={job.url} target="_blank" rel="noopener noreferrer">
-          Apply <ArrowUpRight />
+          Ariza berish <ArrowUpRight />
         </a>
       </div>
     </div>
