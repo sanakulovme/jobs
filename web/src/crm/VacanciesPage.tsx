@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from './api'
 import type { Match, Vacancy } from './api'
+import { dateLabel, sourceLabel, specialtyLabel } from './labels'
 
 const PAGE_SIZE = 20
 
@@ -101,11 +102,11 @@ function VacancyRow({
           <div className="crm-item-title">{vacancy.title}</div>
           <div className="crm-item-sub">{vacancy.company} · {vacancy.location}</div>
           <div className="crm-vac-tags">
-            {(vacancy.specialties ?? []).map((s) => <span key={s} className="jtag">{s}</span>)}
-            <span className="jtag gray">{vacancy.source}</span>
+            {(vacancy.specialties ?? []).map((s) => <span key={s} className="jtag">{specialtyLabel(s)}</span>)}
+            <span className="jtag gray">{sourceLabel(vacancy.source)}</span>
           </div>
         </div>
-        <div className="crm-item-meta">{new Date(vacancy.postedAt).toLocaleDateString()}</div>
+        <div className="crm-item-meta">{dateLabel(vacancy.postedAt)}</div>
       </div>
       {expanded && <VacancyDetail vacancy={vacancy} onOpenMatches={onOpenMatches} onChanged={onChanged} />}
     </div>
@@ -166,7 +167,7 @@ function VacancyDetail({
       <div className="crm-chips">
         {specialties.map((s) => (
           <button key={s} type="button" className={'crm-chip' + (selected.includes(s) ? ' on' : '')} onClick={() => toggle(s)}>
-            {s}
+            {specialtyLabel(s)}
           </button>
         ))}
       </div>
@@ -176,7 +177,7 @@ function VacancyDetail({
           {saving ? 'Saqlanmoqda…' : 'Yo\'nalishlarni saqlash'}
         </button>
         <a className="btn-quiet" href={vacancy.url} target="_blank" rel="noreferrer">Asl e'lonni ochish</a>
-        <button className="btn-primary" onClick={onOpenMatches}>Mos kandidatlar va xat</button>
+        <button className="btn-primary" onClick={onOpenMatches}>Mos kandidatlar</button>
       </div>
     </div>
   )
@@ -213,7 +214,7 @@ function MatchesModal({ jobId, onClose }: { jobId: string; onClose: () => void }
                   <span className="crm-match-score">Ball: {m.score}</span>
                   {m.alreadySent && <span className="jtag green">Yuborilgan</span>}
                 </div>
-                <div className="crm-item-sub">{m.profile.name} · {m.matchedSpecialties.join(', ')}</div>
+                <div className="crm-item-sub">{m.profile.name} · {m.matchedSpecialties.map(specialtyLabel).join(', ')}</div>
                 {m.blockers.length > 0 && (
                   <div className="crm-match-blockers">
                     {m.blockers.map((b) => <span key={b} className="jtag red">{b}</span>)}
@@ -300,7 +301,7 @@ function NewVacancyModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <div className="crm-chips">
             {specialtyOptions.map((s) => (
               <button key={s} type="button" className={'crm-chip' + (selected.includes(s) ? ' on' : '')} onClick={() => toggle(s)}>
-                {s}
+                {specialtyLabel(s)}
               </button>
             ))}
           </div>

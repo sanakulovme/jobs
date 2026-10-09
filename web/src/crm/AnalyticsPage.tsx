@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from './api'
 import type { Analytics, Reply } from './api'
+import { dateLabel } from './labels'
 
 const CATEGORY_LABEL: Record<string, string> = {
   green: 'Yashil',
@@ -227,7 +228,7 @@ function RepliesFeed({ onChecked }: { onChecked: () => void }) {
           </div>
           <div className="crm-item-sub">{rep.subject}</div>
           {rep.summary && <div className="crm-item-sub">{rep.summary}</div>}
-          <div className="crm-item-meta">{new Date(rep.receivedAt).toLocaleDateString()}</div>
+          <div className="crm-item-meta">{dateLabel(rep.receivedAt)}</div>
         </div>
       ))}
     </div>

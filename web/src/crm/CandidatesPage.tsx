@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { crmApi } from './api'
 import { DIRECTIONS, DIRECTION_LABEL, DIRECTION_ARBEITSAGENTUR } from './api'
 import type { Candidate, CandidateInput, Direction, Document, GmailMailbox, ProfileSpecialty, ScrapeResult, ScrapeSource } from './api'
+import { dateLabel, specialtyLabel } from './labels'
 
 const GERMAN_LEVELS = ['', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const DOC_TYPES = [
@@ -414,7 +415,7 @@ function MailboxCard({
           {link && (
             <div className="crm-vac-detail" style={{ marginTop: 8 }}>
               <div className="crm-item-sub">
-                Havolani kandidatga yuboring (Telegram, WhatsApp va h.k.). {new Date(link.expiresAt).toLocaleString()} gacha amal qiladi.
+                Havolani kandidatga yuboring (Telegram, WhatsApp va h.k.). {dateLabel(link.expiresAt, true)} gacha amal qiladi.
               </div>
               <input className="crm-input" readOnly value={link.url} onFocus={(e) => e.target.select()} style={{ marginTop: 6 }} />
             </div>
@@ -605,7 +606,7 @@ function ProfileStep({ candidate, onChanged }: { candidate: Candidate; onChanged
               <div key={p.id} className="crm-item" style={{ cursor: 'default' }}>
                 <div className="crm-item-main">
                   <div className="crm-item-title">{p.name}</div>
-                  <div className="crm-item-sub">{(p.specialties ?? []).map((s) => s.specialty).join(', ')}</div>
+                  <div className="crm-item-sub">{(p.specialties ?? []).map((s) => specialtyLabel(s.specialty)).join(', ')}</div>
                 </div>
                 <button
                   className="btn-quiet crm-danger"
@@ -697,6 +698,12 @@ function DocumentLibrary({ candidate, onChanged }: { candidate: Candidate; onCha
           <input ref={fileRef} className="crm-input" type="file" />
         </div>
       </div>
+      {docType === 'cv' && (
+        <div className="crm-item-sub" style={{ marginBottom: 10 }}>
+          CV'ni PDF formatida yuklang — AI xat yozishda faqat PDF CV'ni o'qiy oladi. Rasm yoki boshqa format
+          xatga ilova bo'lib ketadi, lekin AI uni o'qimaydi.
+        </div>
+      )}
       <div className="crm-row">
         <div className="crm-field">
           <label className="crm-field-label">Nomi (ixtiyoriy)</label>
@@ -799,7 +806,7 @@ function NewProfileForm({
         <div className="crm-chips">
           {specialties.map((s) => (
             <button key={s} type="button" className={'crm-chip' + (selected.includes(s) ? ' on' : '')} onClick={() => toggle(s)}>
-              {s}
+              {specialtyLabel(s)}
             </button>
           ))}
         </div>

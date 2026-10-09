@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from './api'
 import type { Application } from './api'
+import { dateLabel } from './labels'
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Qoralama',
@@ -37,8 +38,8 @@ export function ApplicationsPage() {
       {applications === null && !error && <div className="crm-empty">Yuklanmoqda…</div>}
       {applications && applications.length === 0 && (
         <div className="crm-empty">
-          Hali ariza yo'q. Gmail ulanmagani uchun avtomatik yuborish hali ishlamaydi — Analitika bo'limida sinov
-          rejimida ("test mode") ishga tushirib ko'rishingiz mumkin.
+          Hali ariza yo'q. Kandidat sahifasidagi "Scrape va yuborish" bosqichida ish qidirib, arizalarni avval
+          sinov rejimida tayyorlab ko'ring — haqiqiy yuborilgan arizalar shu yerda chiqadi.
         </div>
       )}
 
@@ -60,7 +61,7 @@ export function ApplicationsPage() {
               ) : (
                 <span className="jtag">{STATUS_LABEL[app.status] ?? app.status}</span>
               )}
-              <span className="crm-item-meta">{new Date(app.sentAt || app.createdAt).toLocaleDateString()}</span>
+              <span className="crm-item-meta">{dateLabel(app.sentAt || app.createdAt)}</span>
             </div>
           </div>
         ))}
