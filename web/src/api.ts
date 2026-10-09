@@ -49,6 +49,8 @@ export type JobsResponse = {
     countries?: Facet[]
     regions?: Facet[]
     states?: Facet[]
+    cities?: Facet[]
+    sites?: Facet[]
   }
 }
 
@@ -60,6 +62,8 @@ export type Filters = {
   countries?: Facet[]
   regions?: Facet[]
   states?: Facet[]
+  cities?: Facet[]
+  sites?: Facet[]
 }
 
 export type Stats = {
@@ -75,6 +79,8 @@ export type JobQuery = {
   country?: string
   region?: string
   state?: string
+  city?: string
+  site?: string
   remote?: boolean
   relocation?: boolean
   sort?: string
@@ -89,6 +95,8 @@ function qs(params: JobQuery): string {
   if (params.country) p.set('country', params.country)
   if (params.region) p.set('region', params.region)
   if (params.state) p.set('state', params.state)
+  if (params.city) p.set('city', params.city)
+  if (params.site) p.set('site', params.site)
   if (params.remote) p.set('remote', 'true')
   if (params.relocation) p.set('relocation', 'true')
   if (params.sort) p.set('sort', params.sort)

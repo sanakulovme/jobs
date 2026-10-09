@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -48,10 +49,15 @@ type snapshot struct {
 	haystacks []string    // lowercased search text, aligned with jobs
 	countries []string    // canonical country per job, aligned with jobs
 	regions   []string    // canonical region per job, aligned with jobs
-	states    []string    // US state / Canadian province per job ("" elsewhere)
+	states    []string    // US state / Canadian province / Bundesland per job ("" elsewhere)
+	cities    []string    // German city per job ("" elsewhere), see model.GermanCity
+	sites     []string    // the website a job was found on, see siteOf
 	// facetParents nests the location facets: country -> region, state ->
 	// country. The Remote / Other buckets are region-less and stay unlisted.
-	facetParents  map[string]string
+	facetParents map[string]string
+	// cityParents maps a city to its Bundesland. Separate from facetParents
+	// because Berlin, Hamburg and Bremen are both a city and a state.
+	cityParents   map[string]string
 	byID          map[string]int
 	companies     []CompanyMeta
 	nameByID      map[string]string
@@ -59,6 +65,8 @@ type snapshot struct {
 	countryFacets []Facet
 	regionFacets  []Facet
 	stateFacets   []Facet
+	cityFacets    []Facet
+	siteFacets    []Facet
 	categories    []Facet
 	sources       []Facet
 	status        *store.RunStatus
@@ -287,10 +295,15 @@ func buildSnapshot(results []store.CompanyResult, status *store.RunStatus) *snap
 	countries := make([]string, len(jobs))
 	regions := make([]string, len(jobs))
 	states := make([]string, len(jobs))
+	cities := make([]string, len(jobs))
+	sites := make([]string, len(jobs))
 	countryCount := map[string]int{}
 	regionCount := map[string]int{}
 	stateCount := map[string]int{}
+	cityCount := map[string]int{}
+	siteCount := map[string]int{}
 	facetParents := map[string]string{}
+	cityParents := map[string]string{}
 	byID := make(map[string]int, len(jobs))
 	for idx, j := range jobs {
 		haystacks[idx] = strings.ToLower(j.Title + " \x00 " + j.Company + " \x00 " + j.Location + " \x00 " + j.Department + " \x00 " + strings.Join(j.Categories, " "))
@@ -312,6 +325,15 @@ func buildSnapshot(results []store.CompanyResult, status *store.RunStatus) *snap
 			stateCount[state]++
 			facetParents[state] = country
 		}
+		if country == "Germany" {
+			if city := model.GermanCity(j.Location); city != "" {
+				cities[idx] = city
+				cityCount[city]++
+				cityParents[city] = state
+			}
+		}
+		sites[idx] = siteOf(j)
+		siteCount[sites[idx]]++
 		countries[idx] = country
 		regions[idx] = region
 		states[idx] = state
@@ -337,7 +359,12 @@ func buildSnapshot(results []store.CompanyResult, status *store.RunStatus) *snap
 		countries:     countries,
 		regions:       regions,
 		states:        states,
+		cities:        cities,
+		sites:         sites,
 		facetParents:  facetParents,
+		cityParents:   cityParents,
+		cityFacets:    withParents(sortedFacets(cityCount), cityParents),
+		siteFacets:    sortedFacets(siteCount),
 		byID:          byID,
 		companies:     companies,
 		nameByID:      nameByID,
@@ -350,6 +377,25 @@ func buildSnapshot(results []store.CompanyResult, status *store.RunStatus) *snap
 		status:        status,
 		builtAt:       time.Now(),
 	}
+}
+
+// siteOf names the website a job was found on, for the board's site filter:
+// arbeitsagentur.de for Bundesagentur postings, the page's host for "any
+// site" scrapes, and the ATS (greenhouse, lever, …) for crawled companies.
+func siteOf(j model.Job) string {
+	switch j.Source {
+	case "bundesagentur":
+		return "arbeitsagentur.de"
+	case "site":
+		if u, err := url.Parse(j.Website); err == nil && u.Hostname() != "" {
+			return strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+		}
+		return strings.TrimPrefix(j.CompanyID, "site-")
+	}
+	if j.Source == "" {
+		return "Other"
+	}
+	return j.Source
 }
 
 // unknownBucket labels jobs whose location names no place we recognize, so the

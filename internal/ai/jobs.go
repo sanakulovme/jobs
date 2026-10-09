@@ -29,7 +29,8 @@ const jobsSystemPrompt = `You read the text of one web page — a company career
 Rules:
 - One entry per individual posting (job, apprenticeship/Ausbildung, internship, au-pair placement, language course offer, etc.) actually shown on the page. If the page is a single posting, return just that one. If there are none, return an empty list.
 - Ignore navigation, filters, ads, cookie banners, "similar jobs" teasers without a title, and the site's own corporate links.
-- title: the posting's title as written. employer: the hiring organisation if shown (else empty). location: city/region as written.
+- title: the posting's title as written. employer: the hiring organisation if shown (else empty).
+- location: "City, State/Bundesland, Country", e.g. "Potsdam, Brandenburg, Germany" or "München, Bayern, Germany". The city must come from the page; fill in the Bundesland and country yourself when the city makes them certain. Empty if the page names no place.
 - url: the link that opens this posting's own page, copied exactly from a [link: ...] marker. Empty if there is none.
 - applicationEmail: an e-mail address the page gives for applying to this posting. Never a generic privacy/support/noreply address, and never one you made up. Empty if none is shown.
 - summary: at most two short sentences in the page's language, taken from what the page says about the posting. Empty if the page shows only the title.

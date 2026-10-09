@@ -200,6 +200,15 @@ func stateIn(country string, segs, tokens []string) string {
 			return s
 		}
 	}
+	// A segment that is exactly a state name is the state slot, and beats a
+	// name merely mentioned inside another segment: "Zossen bei Berlin,
+	// Brandenburg" is in Brandenburg, not Berlin. Scanned from the end, like
+	// the country slot.
+	for i := len(segs) - 1; i >= 0; i-- {
+		if s, ok := names[normPhrase(segs[i])]; ok {
+			return s
+		}
+	}
 	if s, ok := lookupPhrase(tokens, names); ok {
 		return s
 	}

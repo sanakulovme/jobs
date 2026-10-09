@@ -17,7 +17,9 @@ type Query struct {
 	Location   string
 	Country    string // canonical country facet value (see model.CountryOf)
 	Region     string // canonical region facet value (see model.RegionOf)
-	State      string // US state / Canadian province facet value (see model.StateOf)
+	State      string // US state / Canadian province / Bundesland facet value (see model.StateOf)
+	City       string // German city facet value (see model.GermanCity)
+	Site       string // website facet value (see siteOf)
 	Remote     *bool
 	Relocation *bool
 	SinceDays  int
@@ -44,6 +46,8 @@ type Facets struct {
 	Countries  []Facet `json:"countries"`
 	Regions    []Facet `json:"regions"`
 	States     []Facet `json:"states"`
+	Cities     []Facet `json:"cities"`
+	Sites      []Facet `json:"sites"`
 }
 
 // Run executes the query against the given snapshot.
@@ -64,6 +68,8 @@ func (s *snapshot) Run(q Query) QueryResult {
 	countryCount := map[string]int{}
 	regionCount := map[string]int{}
 	stateCount := map[string]int{}
+	cityCount := map[string]int{}
+	siteCount := map[string]int{}
 
 	for idx := range s.jobs {
 		j := &s.jobs[idx]
@@ -92,6 +98,12 @@ func (s *snapshot) Run(q Query) QueryResult {
 		if q.State != "" && s.states[idx] != q.State {
 			continue
 		}
+		if q.City != "" && s.cities[idx] != q.City {
+			continue
+		}
+		if q.Site != "" && s.sites[idx] != q.Site {
+			continue
+		}
 		if q.Remote != nil && j.Remote != *q.Remote {
 			continue
 		}
@@ -118,6 +130,10 @@ func (s *snapshot) Run(q Query) QueryResult {
 		if st := s.states[idx]; st != "" {
 			stateCount[st]++
 		}
+		if c := s.cities[idx]; c != "" {
+			cityCount[c]++
+		}
+		siteCount[s.sites[idx]]++
 	}
 
 	total := len(matched)
@@ -196,6 +212,8 @@ func (s *snapshot) Run(q Query) QueryResult {
 			Countries:  withParents(sortedFacets(countryCount), s.facetParents),
 			Regions:    sortedFacets(regionCount),
 			States:     withParents(sortedFacets(stateCount), s.facetParents),
+			Cities:     withParents(sortedFacets(cityCount), s.cityParents),
+			Sites:      sortedFacets(siteCount),
 		},
 	}
 }

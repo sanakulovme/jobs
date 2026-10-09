@@ -259,8 +259,8 @@ func TestResolveLocationsAgree(t *testing.T) {
 	if c, r, st := ResolveLocations("Remote - EMEA"); c != "" || r != RegionEurope || st != "" {
 		t.Errorf("region-only = %q/%q/%q, want \"\"/Europe/\"\"", c, r, st)
 	}
-	if c, r, st := ResolveLocations("Remote", "Munich"); c != "Germany" || r != RegionEurope || st != "" {
-		t.Errorf("ResolveLocations(Remote, Munich) = %q/%q/%q, want Germany/Europe/\"\"", c, r, st)
+	if c, r, st := ResolveLocations("Remote", "Munich"); c != "Germany" || r != RegionEurope || st != "Bayern" {
+		t.Errorf("ResolveLocations(Remote, Munich) = %q/%q/%q, want Germany/Europe/Bayern", c, r, st)
 	}
 	if c, r, st := ResolveLocations("Remote"); c != "" || r != "" || st != "" {
 		t.Errorf("unresolvable = %q/%q/%q, want empty", c, r, st)
@@ -290,8 +290,9 @@ func TestStateOf(t *testing.T) {
 		"Vancouver":        "British Columbia",
 		"Montreal, Quebec": "Quebec",
 		"London, ON":       "Ontario",
+		// Germany resolves to Bundesländer (see germany.go).
+		"Berlin, Germany": "Berlin",
 		// Everywhere else has no state.
-		"Berlin, Germany":   "",
 		"Bengaluru, KA, IN": "",
 		"Remote - EMEA":     "",
 		"Paris, France":     "",

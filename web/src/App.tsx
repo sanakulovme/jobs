@@ -11,6 +11,10 @@ const PAGE_SIZE = 25
 const COUNTRY_LIMIT = 16
 const COUNTRY_LIMIT_IN_REGION = 40
 const STATE_LIMIT = 60
+const CITY_LIMIT = 40
+// Germany gets a shortcut under Region and a Bundesland → city drill-down:
+// the CRM places candidates into German jobs.
+const GERMANY = 'Germany'
 
 const SORTS: { value: string; label: string }[] = [
   { value: 'recent', label: 'Newest first' },
@@ -39,6 +43,8 @@ export function App() {
   const [allCountries, setAllCountries] = useState<Facet[]>([])
   const [allRegions, setAllRegions] = useState<Facet[]>([])
   const [allStates, setAllStates] = useState<Facet[]>([])
+  const [allCities, setAllCities] = useState<Facet[]>([])
+  const [allSites, setAllSites] = useState<Facet[]>([])
   const [me, setMe] = useState<Me | null>(null)
   useEffect(() => {
     const ctrl = new AbortController()
@@ -51,6 +57,8 @@ export function App() {
         setAllCountries(f.countries || [])
         setAllRegions(f.regions || [])
         setAllStates(f.states || [])
+        setAllCities(f.cities || [])
+        setAllSites(f.sites || [])
       })
       .catch(() => {})
     return () => ctrl.abort()
@@ -63,6 +71,8 @@ export function App() {
   const [country, setCountry] = useState('')
   const [region, setRegion] = useState('')
   const [state, setState] = useState('')
+  const [city, setCity] = useState('')
+  const [site, setSite] = useState('')
   const [remote, setRemote] = useState(false)
   const [relocation, setRelocation] = useState(false)
   const [sort, setSort] = useState('recent')
@@ -94,6 +104,8 @@ export function App() {
   const [liveCountries, setLiveCountries] = useState<Map<string, number>>(new Map())
   const [liveRegions, setLiveRegions] = useState<Map<string, number>>(new Map())
   const [liveStates, setLiveStates] = useState<Map<string, number>>(new Map())
+  const [liveCities, setLiveCities] = useState<Map<string, number>>(new Map())
+  const [liveSites, setLiveSites] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryNonce, setRetryNonce] = useState(0)
@@ -106,7 +118,7 @@ export function App() {
     setError(null)
     api
       .jobs(
-        { q, category, country, region, state, remote, relocation, sort, page, pageSize: PAGE_SIZE },
+        { q, category, country, region, state, city, site, remote, relocation, sort, page, pageSize: PAGE_SIZE },
         ctrl.signal,
       )
       .then((res) => {
@@ -117,6 +129,8 @@ export function App() {
         setLiveCountries(new Map((res.facets?.countries || []).map((f) => [f.value, f.count])))
         setLiveRegions(new Map((res.facets?.regions || []).map((f) => [f.value, f.count])))
         setLiveStates(new Map((res.facets?.states || []).map((f) => [f.value, f.count])))
+        setLiveCities(new Map((res.facets?.cities || []).map((f) => [f.value, f.count])))
+        setLiveSites(new Map((res.facets?.sites || []).map((f) => [f.value, f.count])))
         setLoading(false)
       })
       .catch((e: unknown) => {
@@ -125,7 +139,7 @@ export function App() {
         setLoading(false)
       })
     return () => ctrl.abort()
-  }, [q, category, country, region, state, remote, relocation, sort, page, retryNonce])
+  }, [q, category, country, region, state, city, site, remote, relocation, sort, page, retryNonce])
 
   const hasFilters =
     q !== '' ||
@@ -133,6 +147,8 @@ export function App() {
     country !== '' ||
     region !== '' ||
     state !== '' ||
+    city !== '' ||
+    site !== '' ||
     remote ||
     relocation
   const hasMore = !error && jobs.length < total
@@ -144,6 +160,8 @@ export function App() {
     setCountry('')
     setRegion('')
     setState('')
+    setCity('')
+    setSite('')
     setRemote(false)
     setRelocation(false)
     setPage(1)
@@ -197,6 +215,31 @@ export function App() {
       count: liveStates.has(s.value) ? liveStates.get(s.value)! : hasFilters ? 0 : s.count,
     }))
   }, [allStates, countryParents, country, region, liveStates, hasFilters])
+
+  // Cities exist only for Germany: listed once Germany (all of it, or one
+  // Bundesland) is in scope.
+  const cityItems = useMemo(() => {
+    if (country !== GERMANY) return []
+    const scoped = state ? allCities.filter((c) => c.parent === state) : allCities
+    return scoped.slice(0, CITY_LIMIT).map((c) => ({
+      value: c.value,
+      count: liveCities.has(c.value) ? liveCities.get(c.value)! : hasFilters ? 0 : c.count,
+    }))
+  }, [allCities, country, state, liveCities, hasFilters])
+
+  const siteItems = useMemo(
+    () =>
+      allSites.map((s) => ({
+        value: s.value,
+        count: liveSites.has(s.value) ? liveSites.get(s.value)! : hasFilters ? 0 : s.count,
+      })),
+    [allSites, liveSites, hasFilters],
+  )
+  const germanyCount = useMemo(() => {
+    const g = allCountries.find((c) => c.value === GERMANY)
+    if (!g) return null
+    return liveCountries.has(GERMANY) ? liveCountries.get(GERMANY)! : hasFilters ? 0 : g.count
+  }, [allCountries, liveCountries, hasFilters])
 
   // Any filter change starts back at page 1.
   function pickAndClose<T>(setter: (v: T) => void) {
@@ -257,6 +300,28 @@ export function App() {
         )}
       </label>
 
+      {siteItems.length > 1 && (
+        <div className="sb-section" role="group" aria-label="Site">
+          <div className="sb-label">Site</div>
+          <button
+            className={'sb-item' + (site === '' ? ' on' : '')}
+            onClick={() => pickAndClose(setSite)('')}
+          >
+            <span className="sb-item-text">All sites</span>
+          </button>
+          {siteItems.map((s) => (
+            <button
+              key={s.value}
+              className={'sb-item' + (site === s.value ? ' on' : '')}
+              onClick={() => pickAndClose(setSite)(site === s.value ? '' : s.value)}
+            >
+              <span className="sb-item-text">{s.value}</span>
+              <span className="sb-count">{s.count ? numberFmt(s.count) : ''}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="sb-section" role="group" aria-label="Region">
         <div className="sb-label">Region</div>
         <button
@@ -264,11 +329,26 @@ export function App() {
           onClick={() => {
             setRegion('')
             setState('')
+            setCity('')
             pickAndClose(setCountry)('')
           }}
         >
           <span className="sb-item-text">Everywhere</span>
         </button>
+        {germanyCount !== null && (
+          <button
+            className={'sb-item' + (country === GERMANY && region === '' ? ' on' : '')}
+            onClick={() => {
+              setRegion('')
+              setState('')
+              setCity('')
+              pickAndClose(setCountry)(country === GERMANY && region === '' ? '' : GERMANY)
+            }}
+          >
+            <span className="sb-item-text">All of Germany</span>
+            <span className="sb-count">{germanyCount ? numberFmt(germanyCount) : ''}</span>
+          </button>
+        )}
         {regionItems.map((r) => (
           <button
             key={r.value}
@@ -276,6 +356,7 @@ export function App() {
             onClick={() => {
               setCountry('')
               setState('')
+              setCity('')
               pickAndClose(setRegion)(region === r.value ? '' : r.value)
             }}
           >
@@ -292,6 +373,7 @@ export function App() {
             className={'sb-item' + (country === '' ? ' on' : '')}
             onClick={() => {
               setState('')
+              setCity('')
               pickAndClose(setCountry)('')
             }}
           >
@@ -304,6 +386,7 @@ export function App() {
             className={'sb-item' + (country === c.value ? ' on' : '')}
             onClick={() => {
               setState('')
+              setCity('')
               pickAndClose(setCountry)(country === c.value ? '' : c.value)
             }}
           >
@@ -315,10 +398,15 @@ export function App() {
 
       {stateItems.length > 0 && (
         <div className="sb-section" role="group" aria-label="State">
-          <div className="sb-label">{country === 'Canada' ? 'Province' : 'State'}</div>
+          <div className="sb-label">
+            {country === 'Canada' ? 'Province' : country === GERMANY ? 'Bundesland' : 'State'}
+          </div>
           <button
             className={'sb-item' + (state === '' ? ' on' : '')}
-            onClick={() => pickAndClose(setState)('')}
+            onClick={() => {
+              setCity('')
+              pickAndClose(setState)('')
+            }}
           >
             <span className="sb-item-text">All of {country || region}</span>
           </button>
@@ -326,10 +414,35 @@ export function App() {
             <button
               key={s.value}
               className={'sb-item' + (state === s.value ? ' on' : '')}
-              onClick={() => pickAndClose(setState)(state === s.value ? '' : s.value)}
+              onClick={() => {
+                setCity('')
+                pickAndClose(setState)(state === s.value ? '' : s.value)
+              }}
             >
               <span className="sb-item-text">{s.value}</span>
               <span className="sb-count">{s.count ? numberFmt(s.count) : ''}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {cityItems.length > 0 && (
+        <div className="sb-section" role="group" aria-label="City">
+          <div className="sb-label">{state ? `City in ${state}` : 'City'}</div>
+          <button
+            className={'sb-item' + (city === '' ? ' on' : '')}
+            onClick={() => pickAndClose(setCity)('')}
+          >
+            <span className="sb-item-text">All of {state || country}</span>
+          </button>
+          {cityItems.map((c) => (
+            <button
+              key={c.value}
+              className={'sb-item' + (city === c.value ? ' on' : '')}
+              onClick={() => pickAndClose(setCity)(city === c.value ? '' : c.value)}
+            >
+              <span className="sb-item-text">{c.value}</span>
+              <span className="sb-count">{c.count ? numberFmt(c.count) : ''}</span>
             </button>
           ))}
         </div>

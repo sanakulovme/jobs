@@ -99,6 +99,8 @@ func (a *API) handleFilters(w http.ResponseWriter, r *http.Request) {
 		"countries":  snap.countryFacets,
 		"regions":    snap.regionFacets,
 		"states":     snap.stateFacets,
+		"cities":     snap.cityFacets,
+		"sites":      snap.siteFacets,
 	}, time.Minute)
 }
 
@@ -125,6 +127,8 @@ func parseQuery(r *http.Request) Query {
 		Country:    strings.TrimSpace(v.Get("country")),
 		Region:     strings.TrimSpace(v.Get("region")),
 		State:      strings.TrimSpace(v.Get("state")),
+		City:       strings.TrimSpace(v.Get("city")),
+		Site:       strings.TrimSpace(v.Get("site")),
 		Sort:       v.Get("sort"),
 		Page:       atoiDefault(v.Get("page"), 1),
 		PageSize:   atoiDefault(v.Get("pageSize"), 25),

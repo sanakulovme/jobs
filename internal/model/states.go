@@ -141,6 +141,8 @@ func statesOf(country string) (codes, names, cities map[string]string) {
 		return usStateCodes, usStateNames, usCityStates
 	case "Canada":
 		return caProvinceCodes, caProvinceNames, caCityProvinces
+	case "Germany":
+		return deStateCodes, deStateNames, deCityStates
 	}
 	return nil, nil, nil
 }

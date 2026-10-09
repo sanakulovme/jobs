@@ -23,3 +23,17 @@ func TestAusbildungTagComesFromTitleOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestBALocation(t *testing.T) {
+	cases := []struct{ ort, region, land, want string }{
+		{"Potsdam", "BRANDENBURG", "DEUTSCHLAND", "Potsdam, Brandenburg, Germany"},
+		{"Köln", "NORDRHEIN-WESTFALEN", "DEUTSCHLAND", "Köln, Nordrhein-Westfalen, Germany"},
+		{"Berlin", "", "", "Berlin, Germany"},
+		{"Wien", "", "ÖSTERREICH", "Wien, Österreich"},
+	}
+	for _, c := range cases {
+		if got := baLocation(c.ort, c.region, c.land); got != c.want {
+			t.Errorf("baLocation(%q,%q,%q) = %q, want %q", c.ort, c.region, c.land, got, c.want)
+		}
+	}
+}

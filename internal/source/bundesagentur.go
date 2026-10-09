@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
 
 	"faangjobs/internal/model"
 	"faangjobs/internal/registry"
@@ -52,7 +53,9 @@ type baListJob struct {
 	Veroeffentlicht   string `json:"datumErsteVeroeffentlichung"`
 	Stellenlokationen []struct {
 		Adresse struct {
-			Ort string `json:"ort"`
+			Ort    string `json:"ort"`
+			Region string `json:"region"` // Bundesland, upper-case ("NORDRHEIN-WESTFALEN")
+			Land   string `json:"land"`   // "DEUTSCHLAND" for domestic postings
 		} `json:"adresse"`
 	} `json:"stellenlokationen"`
 }
@@ -132,7 +135,7 @@ func baFetchList(ctx context.Context, f *Fetcher, was, wo string, umkreis, maxJo
 func baBuildJob(ctx context.Context, f *Fetcher, c registry.Company, item baListJob) model.Job {
 	city := ""
 	if len(item.Stellenlokationen) > 0 {
-		city = item.Stellenlokationen[0].Adresse.Ort
+		city = baLocation(item.Stellenlokationen[0].Adresse.Ort, item.Stellenlokationen[0].Adresse.Region, item.Stellenlokationen[0].Adresse.Land)
 	}
 	j := model.Job{
 		ID:               c.ID + "~" + model.StableID(item.Referenznummer),
@@ -178,6 +181,28 @@ func baBuildJob(ctx context.Context, f *Fetcher, c registry.Company, item baList
 
 func urlEncode(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, " ", "+"), "&", "%26")
+}
+
+// baLocation renders a posting's place as "Ort, Bundesland, Germany" (the
+// Bundesland from the API, so the board's region filter can drill into it
+// without guessing from the town name). Postings abroad keep their country.
+func baLocation(ort, region, land string) string {
+	parts := []string{strings.TrimSpace(ort)}
+	if st := model.GermanStateName(region); st != "" {
+		parts = append(parts, st)
+	}
+	switch l := strings.TrimSpace(land); {
+	case l == "" || strings.EqualFold(l, "deutschland"):
+		parts = append(parts, "Germany")
+	default:
+		r := []rune(strings.ToLower(l))
+		r[0] = unicode.ToUpper(r[0])
+		parts = append(parts, string(r))
+	}
+	if parts[0] == "" {
+		parts = parts[1:]
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ── extraction heuristics (best-effort over free-text German descriptions) ──
